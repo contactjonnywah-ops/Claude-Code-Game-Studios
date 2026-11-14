@@ -1,0 +1,21 @@
+L1	pass	evidence/play.png	low-poly basalt moon, pulsing ember cracks (index.html:274), violet sky, gas giant, orange followers vs blue rivals, carved totems; fissure molten glow and cooling at index.html:849
+L2	pass	index.html:783	weak shaman respawns at hearth, mana from followers, terrain spells, rotating world; own names and figures
+L3	pass	evidence/play.png	3D globe, drag and arrow-key spin (index.html:618), wheel zoom
+F1	pass	index.html:313	cube-sphere terrain mesh with sea; stamps deform height (index.html:849)
+F2	pass	index.html:773	1/2/3 plant totems (index.html:909); each totem claims its quota of the nearest free followers
+F3	pass	index.html:966	wood from gathering (index.html:733), huts cost wood (index.html:748) and spawn followers (index.html:969), mana from work
+F4	pass	index.html:976	shaman reborn at the hearth after shamanRespawn; only she casts (index.html:783)
+F5	pass	index.html:801	Ember, Raise, Fissure, each with range and mana cost from config.js
+F6	pass	index.html:882	raids grow by raidGrow each time (index.html:896), warning raidWarn seconds before
+F7	pass	index.html:1271	over screen (R restarts) and results screen (Enter plays again)
+M1	pass	evidence/figures.png	6 followers placed at the hearth with the shaman (index.html:582)
+M2	pass	evidence/play.png	hint panel: Point at the dark ash pines and press 1 (index.html:1130)
+M3	pass	index.html:733	Gather crews walk to trees, chop, haul wood to the hearth
+M4	pass	index.html:748	Build totem starts a hut site that rises as builders work
+M5	pass	index.html:966	mana bar grows with working followers
+M6	pass	evidence/dev-play.png	rival camp visible on the eastern horizon; hint advances when it faces the camera (index.html:1000)
+M7	pass	index.html:927	click walks the shaman; W then click casts Raise, walking into range first
+C1	pass	index.html:1155	first raid at raidFirst 180 s, raidBase 3 warriors; warning banner, horn and red edge arrow 15 s ahead
+C2	pass	index.html:896	raid size grows each wave
+C3	pass	index.html:798	Fissure 50 mana, range 3.2 vs 5 for others; shaman respawn 10 s
+C4	pass	index.html:1012	all followers dead: game over, R restarts the moon

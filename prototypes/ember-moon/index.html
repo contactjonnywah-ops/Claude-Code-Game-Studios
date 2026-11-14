@@ -1,0 +1,1330 @@
+<!doctype html>
+<!-- PROTOTYPE - NOT FOR PRODUCTION -->
+<!-- Question: is reshaping the ground under the rival camp more fun than fighting it? -->
+<!-- Date: 2026-11-14 -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ember Moon</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0d0818; overflow: hidden; }
+  body { font-variant-numeric: tabular-nums; }
+  canvas { display: block; position: absolute; left: 0; top: 0; }
+  #game { cursor: crosshair; touch-action: none; }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<canvas id="game"></canvas>
+<script src="vendor/three.js"></script>
+<script src="config.js"></script>
+<script>
+'use strict';
+// Ember Moon: a shaman on a tiny moon. Totems steer the tribe; the crust is the weapon.
+
+// ---- Built to be checked ----------------------------------------------------------------
+const params = new URLSearchParams(location.search);
+const tune = new Proxy({}, { get: (_, k) => CONFIG[k].value }); // live: tune.speed is CONFIG.speed.value
+const STEP = 1 / 60;            // simulation step in seconds; motion is per second, never per frame
+const W = 1280, H = 720;        // logical size; a pixel look lowers it and sets PIXEL
+const PIXEL = false;            // pixel looks: whole-number scale, no smoothing
+const FONT = '"Trebuchet MS", "Segoe UI", sans-serif';
+const TITLE = 'Ember Moon';
+const CONTROLS = [
+  'Drag or arrow keys: spin the moon · Wheel: zoom',
+  'Click: walk the shaman · Space: find her',
+  '1 / 2 / 3: plant a Gather / Build / War totem at the cursor · X: pull one up',
+  'Q Ember · W Raise · E Fissure, then click to cast',
+  'P: pause · M: mute',
+];
+const clock = window.GAME_CLOCK || { now: () => performance.now() / 1000 }; // a check may inject one
+const CHEAP = params.get('render') === 'cheap'; // a headless shot or check: 3D draws cheap; players never see it
+let seed;
+function rng() { // mulberry32; every gameplay random call reads this, never Math.random
+  seed = (seed + 0x6D2B79F5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), seed | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+const events = []; // window.game.events: anything the game wants a run to see
+
+// ---- Screen ---------------------------------------------------------------------------
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const glCanvas = document.getElementById('gl');
+const renderer = new THREE.WebGLRenderer({ canvas: glCanvas, antialias: !CHEAP });
+renderer.setPixelRatio(CHEAP ? 0.5 : Math.min(devicePixelRatio || 1, 2));
+let viewScale = 1, viewLeft = 0, viewTop = 0;
+function fit() { // fills the window at any size and pixel ratio
+  const k = Math.min(innerWidth / W, innerHeight / H);
+  const s = PIXEL ? Math.max(1, Math.floor(k)) : k;
+  const r = PIXEL ? 1 : s * (devicePixelRatio || 1);
+  canvas.width = Math.round(W * r); canvas.height = Math.round(H * r);
+  canvas.style.width = Math.round(W * s) + 'px'; canvas.style.height = Math.round(H * s) + 'px';
+  viewScale = s; viewLeft = Math.max(0, Math.floor((innerWidth - W * s) / 2));
+  viewTop = Math.max(0, Math.floor((innerHeight - H * s) / 2));
+  canvas.style.left = viewLeft + 'px'; canvas.style.top = viewTop + 'px';
+  canvas.style.imageRendering = PIXEL ? 'pixelated' : 'auto';
+  ctx.setTransform(r, 0, 0, r, 0, 0); ctx.imageSmoothingEnabled = !PIXEL;
+  renderer.setSize(Math.round(W * s), Math.round(H * s));
+  glCanvas.style.left = viewLeft + 'px'; glCanvas.style.top = viewTop + 'px';
+}
+addEventListener('resize', fit); fit();
+function clear(c) { ctx.fillStyle = c; ctx.fillRect(0, 0, W, H); }
+function text(s, x, y, size, c, align = 'center') {
+  ctx.fillStyle = c; ctx.font = `${size}px ${FONT}`; ctx.textAlign = align;
+  ctx.textBaseline = 'middle'; ctx.fillText(s, x, y);
+}
+function shadowText(s, x, y, size, c, align = 'center') {
+  text(s, x + 2, y + 2, size, 'rgba(0,0,0,0.75)', align); text(s, x, y, size, c, align);
+}
+
+// ---- Input: keys by position (event.code), OS key repeat ignored ------------------------
+const down = new Set(), hit = new Set();
+const pressed = code => hit.has(code); // true for one step after the key goes down
+addEventListener('keydown', e => {
+  startAudio();
+  if (!e.repeat) { down.add(e.code); hit.add(e.code); }
+  if (e.code === 'Space' || e.code.startsWith('Arrow') || e.code === 'Tab') e.preventDefault();
+});
+addEventListener('keyup', e => down.delete(e.code));
+addEventListener('pointerdown', () => startAudio());
+addEventListener('blur', () => down.clear());
+
+// Mouse: drag spins the moon, a click without a drag walks the shaman or casts.
+const mouse = { x: W / 2, y: H / 2, down: false, sx: 0, sy: 0, dragged: false, clicks: [] };
+function toLogical(e) { return [(e.clientX - viewLeft) / viewScale, (e.clientY - viewTop) / viewScale]; }
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+canvas.addEventListener('pointerdown', e => {
+  [mouse.x, mouse.y] = toLogical(e);
+  if (e.button === 2) { mouse.clicks.push({ x: mouse.x, y: mouse.y, right: true }); return; }
+  mouse.down = true; mouse.sx = mouse.x; mouse.sy = mouse.y; mouse.dragged = false;
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener('pointermove', e => {
+  const [x, y] = toLogical(e);
+  if (mouse.down) {
+    if (Math.hypot(x - mouse.sx, y - mouse.sy) > 6) mouse.dragged = true;
+    if (mouse.dragged) spin((x - mouse.x) * 0.0055 * view.dist / 30, (y - mouse.y) * 0.0055 * view.dist / 30);
+  }
+  mouse.x = x; mouse.y = y;
+});
+canvas.addEventListener('pointerup', e => {
+  if (mouse.down && !mouse.dragged) mouse.clicks.push({ x: mouse.x, y: mouse.y, right: false });
+  mouse.down = false;
+});
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  view.dist = Math.max(17, Math.min(48, view.dist + e.deltaY * 0.02));
+}, { passive: false });
+
+// ---- Audio: started on first input, mute on M --------------------------------------------
+let audio = null, muted = false;
+function startAudio() {
+  if (!audio) {
+    const ac = window.GAME_AUDIO || new (window.AudioContext || window.webkitAudioContext)(); // a check may inject one
+    const out = ac.createGain(); out.gain.value = muted ? 0 : tune.volume;
+    out.connect(ac.destination); audio = { ac, out };
+  }
+  if (audio.ac.state === 'suspended') audio.ac.resume();
+}
+function setMuted(m) { muted = m; if (audio) audio.out.gain.value = m ? 0 : tune.volume; }
+addEventListener('tune', () => setMuted(muted)); // the tweak panel (an add-on), when added, moved a value: the volume follows
+function tone(freq, dur, type = 'square', vol = 0.3) {
+  if (!audio || muted) return;
+  const t = audio.ac.currentTime, o = audio.ac.createOscillator(), g = audio.ac.createGain();
+  o.type = type; o.frequency.value = freq;
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.connect(g).connect(audio.out); o.start(t); o.stop(t + dur);
+}
+function sweep(f0, f1, dur, type = 'sawtooth', vol = 0.2) {
+  if (!audio || muted) return;
+  const t = audio.ac.currentTime, o = audio.ac.createOscillator(), g = audio.ac.createGain();
+  o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.connect(g).connect(audio.out); o.start(t); o.stop(t + dur);
+}
+let noiseBuf = null;
+function rumble(dur, freq, vol) { // filtered noise: earth, fire, wind
+  if (!audio || muted) return;
+  const ac = audio.ac;
+  if (!noiseBuf) {
+    noiseBuf = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate);
+    const d = noiseBuf.getChannelData(0); let s = 7;
+    for (let i = 0; i < d.length; i++) { s = (s * 16807) % 2147483647; d[i] = s / 1073741823.5 - 1; }
+  }
+  const src = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain(), t = ac.currentTime;
+  src.buffer = noiseBuf; f.type = 'lowpass'; f.frequency.value = freq;
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  src.connect(f).connect(g).connect(audio.out); src.start(t); src.stop(t + dur);
+}
+let chopSfxT = 0;
+
+// ---- The world: three.js --------------------------------------------------------------
+const R = 10; // moon radius in world units
+const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+const YAX = V(0, 1, 0), XAX = V(1, 0, 0), ZAX = V(0, 0, 1);
+const world = new THREE.Scene();
+world.background = new THREE.Color(0x150c26);
+const camera = new THREE.PerspectiveCamera(40, W / H, 0.5, 600);
+const view = { dist: 30, target: null, shake: 0 };
+const moon = new THREE.Group(); world.add(moon);
+
+world.add(new THREE.HemisphereLight(0x9a7ae0, 0x2a1420, 1.1));
+const sun = new THREE.DirectionalLight(0xffd2a0, 1.9); sun.position.set(-30, 25, 30); world.add(sun);
+const rim = new THREE.DirectionalLight(0x8a70ff, 0.9); rim.position.set(40, -10, -30); world.add(rim);
+
+// Gas giant on the horizon and a field of stars: fixed to the sky, not the moon.
+(function sky() {
+  const c = document.createElement('canvas'); c.width = 64; c.height = 256;
+  const g = c.getContext('2d');
+  const bands = ['#5a3b7a', '#8a5a8c', '#d99a8a', '#6b4a8a', '#f0b890', '#7a5090', '#b07aa0', '#4a2f6a'];
+  for (let i = 0; i < 32; i++) { g.fillStyle = bands[(i * 5 + (i >> 2)) % bands.length]; g.fillRect(0, i * 8, 64, 8 + (i % 3) * 3); }
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  const giant = new THREE.Mesh(new THREE.SphereGeometry(48, 48, 32), new THREE.MeshLambertMaterial({ map: tex }));
+  giant.position.set(-170, 85, -300); giant.rotation.z = 0.35; world.add(giant);
+  const ringG = new THREE.RingGeometry(58, 80, 96);
+  const ring = new THREE.Mesh(ringG, new THREE.MeshBasicMaterial({ color: 0xd8a0a0, transparent: true, opacity: 0.22, side: THREE.DoubleSide }));
+  ring.position.copy(giant.position); ring.rotation.set(1.25, 0.2, 0.35); world.add(ring);
+  const pts = []; let s = 99;
+  const r = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+  for (let i = 0; i < 900; i++) {
+    const v = V(r() * 2 - 1, r() * 2 - 1, r() * 2 - 1).normalize().multiplyScalar(400);
+    if (v.z > -60) v.z = -60 - r() * 300; pts.push(v.x, v.y, v.z);
+  }
+  const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  world.add(new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xffe8d0, size: 1.6, sizeAttenuation: false })));
+})();
+
+// Noise for the crust: value noise, seeded.
+let noiseSeed = 1;
+function hash3(x, y, z) {
+  let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(z, 1440670441) + Math.imul(noiseSeed, 144665)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+function vnoise(x, y, z) {
+  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+  const xf = x - xi, yf = y - yi, zf = z - zi;
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf), w = zf * zf * (3 - 2 * zf);
+  const l = (a, b, t) => a + (b - a) * t;
+  return l(l(l(hash3(xi, yi, zi), hash3(xi + 1, yi, zi), u), l(hash3(xi, yi + 1, zi), hash3(xi + 1, yi + 1, zi), u), v),
+           l(l(hash3(xi, yi, zi + 1), hash3(xi + 1, yi, zi + 1), u), l(hash3(xi, yi + 1, zi + 1), hash3(xi + 1, yi + 1, zi + 1), u), v), w);
+}
+function fbm(x, y, z) { return vnoise(x, y, z) * 0.57 + vnoise(x * 2.1, y * 2.1, z * 2.1) * 0.29 + vnoise(x * 4.3, y * 4.3, z * 4.3) * 0.14; }
+
+// Geodesy helpers: every position is a unit direction from the moon's centre.
+const dist = (a, b) => Math.acos(Math.max(-1, Math.min(1, a.dot(b)))) * R;
+function basis(d) {
+  const e1 = Math.abs(d.y) > 0.95 ? V().crossVectors(d, XAX).normalize() : V().crossVectors(d, YAX).normalize();
+  return [e1, V().crossVectors(d, e1)];
+}
+function offsetDir(c, d, ang) { // the direction d world units from c, heading ang
+  const [e1, e2] = basis(c);
+  const t = e1.multiplyScalar(Math.cos(ang)).add(e2.multiplyScalar(Math.sin(ang)));
+  return c.clone().multiplyScalar(Math.cos(d / R)).add(t.multiplyScalar(Math.sin(d / R))).normalize();
+}
+function slerpDir(a, b, t) {
+  const ang = Math.acos(Math.max(-1, Math.min(1, a.dot(b))));
+  if (ang < 1e-5) return a.clone();
+  const ax = V().crossVectors(a, b).normalize();
+  return a.clone().applyAxisAngle(ax, ang * t);
+}
+
+// The map: your continent faces the camera, the blue camp's lies east across a strait,
+// a peninsula reaches toward it, and a shallow ford arcs around the north.
+const HOME = V(0, 0.22, 1).normalize();
+const CAMP = HOME.clone().applyAxisAngle(YAX, 1.38);
+const PEN = slerpDir(HOME, CAMP, 0.42);
+const FORDMID = V().addVectors(HOME, CAMP).normalize().add(V(0, 0.95, 0)).normalize();
+const FOREST = offsetDir(HOME, 3.2, 2.6);
+const BLOBS = [
+  { dir: HOME, r: 0.52, h: 1.35 }, { dir: CAMP, r: 0.4, h: 1.3 }, { dir: PEN, r: 0.24, h: 1.05 },
+  { dir: offsetDir(HOME, 4.5, 4.3), r: 0.09, h: 2.6 }, // the Spine: a crag too steep to climb
+  { dir: offsetDir(HOME, 5.6, 0.9), r: 0.08, h: 2.4 },
+  { dir: HOME.clone().applyAxisAngle(XAX, 1.9), r: 0.22, h: 1.2 }, // far islands
+  { dir: HOME.clone().applyAxisAngle(YAX, -1.9), r: 0.2, h: 1.1 },
+  { dir: CAMP.clone().applyAxisAngle(XAX, -1.2), r: 0.17, h: 1.1 },
+];
+const FLATS = [{ dir: HOME, r: 1.6, h: 0.45 }, { dir: CAMP, r: 2.6, h: 0.5 }];
+const FORD_SAMPLES = [];
+for (let i = 0; i <= 30; i++) FORD_SAMPLES.push(slerpDir(HOME, FORDMID, i / 30));
+for (let i = 1; i <= 30; i++) FORD_SAMPLES.push(slerpDir(FORDMID, CAMP, i / 30));
+function baseH(d) {
+  const n = fbm(d.x * 2.3 + 7, d.y * 2.3, d.z * 2.3), n2 = fbm(d.x * 6 + 3, d.y * 6 + 1, d.z * 6);
+  let c = 0;
+  for (const b of BLOBS) {
+    const a = Math.acos(Math.max(-1, Math.min(1, d.dot(b.dir)))) / b.r;
+    if (a < 1) c = Math.max(c, b.h * (1 - a * a * a * a));
+  }
+  let h = -0.75 + c * (0.8 + 0.55 * n) + (n2 - 0.5) * 0.4;
+  if (h < -0.1) { // the ford: a shallow, wadeable arc
+    let fd = 99;
+    for (const s of FORD_SAMPLES) { const dd = 1 - d.dot(s); if (dd < fd) fd = dd; }
+    fd = Math.sqrt(2 * fd) * R;
+    if (fd < 0.8) h = Math.max(h, -0.14 - fd * 0.08);
+  }
+  for (const f of FLATS) {
+    const a = dist(d, f.dir);
+    if (a < f.r) { const k = 1 - a / f.r, s = k * k * (3 - 2 * k); h = h + (f.h - h) * s; }
+  }
+  return h;
+}
+function crackGlow(d, h) { // ember cracks along fault lines on land
+  if (h < 0.06) return 0;
+  const k = Math.abs(fbm(d.x * 3.1 + 11, d.y * 3.1 - 4, d.z * 3.1 + 2) - 0.5);
+  return k < 0.02 ? (1 - k / 0.02) * 0.9 : 0;
+}
+
+// Stamps: what the shaman did to the crust. Raises stay; fissures cool shut.
+let stamps = [];
+function fissureX(st, d) { // 0 at the crack's heart, 1 at its edge; an ellipse along st.ax
+  if (d.dot(st.dir) < st.cosR) return 9;
+  const v = V().subVectors(d, st.dir);
+  const a = v.dot(st.ax) * R / (st.rad * 1.5), b = v.dot(st.bx) * R / (st.rad * 0.75);
+  return Math.sqrt(a * a + b * b);
+}
+function stampX(st, d) {
+  if (st.kind === 'fissure') return fissureX(st, d);
+  if (d.dot(st.dir) < st.cosR) return 9;
+  return dist(d, st.dir) / st.rad;
+}
+function stampH(d) {
+  let s = 0;
+  for (const st of stamps) {
+    const x = stampX(st, d);
+    if (x >= 1) continue;
+    const f = (1 - x * x) * (1 - x * x);
+    s += st.kind === 'fissure' ? st.cur * f * (0.7 + 0.6 * vnoise(d.x * 9, d.y * 9, d.z * 9)) : st.cur * f;
+  }
+  return s;
+}
+const heightAt = d => baseH(d) + stampH(d);
+function hotAt(d) {
+  for (const st of stamps) if (st.kind === 'fissure' && st.heat > 0.25 && fissureX(st, d) < 0.9) return true;
+  return false;
+}
+function blocked(d) { const h = heightAt(d); return h < tune.deepWater || h > tune.cliff || hotAt(d); }
+
+// Terrain mesh: a cube-sphere so every vertex is a direction we can deform.
+const GRID = 44;
+const T = { dirs: [], base: null, crack: null, geo: null, mesh: null, dirty: true };
+(function buildTerrain() {
+  const faces = [[XAX, YAX, ZAX], [ZAX, YAX, XAX], [XAX.clone().negate(), YAX, ZAX.clone().negate()],
+    [ZAX.clone().negate(), YAX, XAX.clone().negate()], [XAX, ZAX.clone().negate(), YAX], [XAX, ZAX, YAX.clone().negate()]];
+  const idx = [];
+  for (const [ua, va, na] of faces) {
+    const o = T.dirs.length;
+    for (let j = 0; j <= GRID; j++) for (let i = 0; i <= GRID; i++) {
+      const u = Math.tan((i / GRID * 2 - 1) * Math.PI / 4), v = Math.tan((j / GRID * 2 - 1) * Math.PI / 4);
+      T.dirs.push(na.clone().add(ua.clone().multiplyScalar(u)).add(va.clone().multiplyScalar(v)).normalize());
+    }
+    const n1 = V().crossVectors(ua, va).dot(na) > 0;
+    for (let j = 0; j < GRID; j++) for (let i = 0; i < GRID; i++) {
+      const a = o + j * (GRID + 1) + i, b = a + 1, c = a + GRID + 1, d = c + 1;
+      if (n1) idx.push(a, b, d, a, d, c); else idx.push(a, d, b, a, c, d);
+    }
+  }
+  const n = T.dirs.length;
+  T.geo = new THREE.BufferGeometry();
+  T.geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+  T.geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+  T.geo.setAttribute('glow', new THREE.BufferAttribute(new Float32Array(n), 1));
+  T.geo.setIndex(idx);
+  T.base = new Float32Array(n); T.crack = new Float32Array(n);
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+  mat.onBeforeCompile = sh => {
+    sh.uniforms.uPulse = pulse;
+    sh.vertexShader = 'attribute float glow;\nvarying float vGlow;\n' +
+      sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlow = glow;');
+    sh.fragmentShader = 'uniform float uPulse;\nvarying float vGlow;\n' +
+      sh.fragmentShader.replace('#include <emissivemap_fragment>',
+        '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vec3(1.0, 0.36, 0.07) * vGlow * uPulse;');
+  };
+  T.mesh = new THREE.Mesh(T.geo, mat); moon.add(T.mesh);
+})();
+const pulse = { value: 1 };
+const COL = {
+  deep: new THREE.Color(0x1a1530), ford: new THREE.Color(0x4a4060), sand: new THREE.Color(0x76625c),
+  low: new THREE.Color(0x3b3037), mid: new THREE.Color(0x4f3f46), high: new THREE.Color(0x6a5760),
+  peak: new THREE.Color(0x9a8680), char: new THREE.Color(0x2a0d08),
+};
+function bakeBase() {
+  for (let i = 0; i < T.dirs.length; i++) { const d = T.dirs[i]; T.base[i] = baseH(d); T.crack[i] = crackGlow(d, T.base[i]); }
+  T.dirty = true;
+}
+const tmpC = new THREE.Color();
+function rebuildTerrain() {
+  const pos = T.geo.attributes.position.array, col = T.geo.attributes.color.array, glow = T.geo.attributes.glow.array;
+  const fis = stamps.filter(s => s.kind === 'fissure');
+  for (let i = 0; i < T.dirs.length; i++) {
+    const d = T.dirs[i];
+    const h = T.base[i] + (stamps.length ? stampH(d) : 0);
+    const r = R + h;
+    pos[i * 3] = d.x * r; pos[i * 3 + 1] = d.y * r; pos[i * 3 + 2] = d.z * r;
+    let g = T.crack[i];
+    if (h < tune.deepWater) tmpC.copy(COL.deep);
+    else if (h < 0) tmpC.copy(COL.ford);
+    else if (h < 0.12) tmpC.copy(COL.sand);
+    else if (h < 0.8) tmpC.copy(COL.low).lerp(COL.mid, (h - 0.12) / 0.68);
+    else if (h < 1.45) tmpC.copy(COL.mid).lerp(COL.high, (h - 0.8) / 0.65);
+    else tmpC.copy(COL.high).lerp(COL.peak, Math.min(1, (h - 1.45) / 0.6));
+    for (const st of fis) {
+      const x = fissureX(st, d);
+      if (x < 1.15) { const k = Math.max(0, 1 - x / 1.15); tmpC.lerp(COL.char, Math.min(1, k * 1.4)); g += st.heat * k * 2.2; }
+    }
+    col[i * 3] = tmpC.r; col[i * 3 + 1] = tmpC.g; col[i * 3 + 2] = tmpC.b; glow[i] = g;
+  }
+  T.geo.attributes.position.needsUpdate = true; T.geo.attributes.color.needsUpdate = true;
+  T.geo.attributes.glow.needsUpdate = true; T.geo.computeBoundingSphere(); T.dirty = false;
+}
+const sea = new THREE.Mesh(new THREE.IcosahedronGeometry(R + 0.01, 14),
+  new THREE.MeshPhongMaterial({ color: 0x2d2a78, specular: 0xb090e0, shininess: 70, transparent: true, opacity: 0.8, flatShading: true }));
+moon.add(sea);
+const halo = new THREE.Mesh(new THREE.SphereGeometry(R * 1.07, 48, 32),
+  new THREE.MeshBasicMaterial({ color: 0xff6a30, transparent: true, opacity: 0.07, side: THREE.BackSide, blending: THREE.AdditiveBlending, depthWrite: false }));
+world.add(halo);
+
+// ---- Figures: every one drawn from low-poly parts -------------------------------------
+const matCache = {};
+function M(c, e = 0) {
+  const k = c + ':' + e;
+  return matCache[k] || (matCache[k] = new THREE.MeshLambertMaterial({ color: c, emissive: e, flatShading: true }));
+}
+function part(g, geo, mat, x, y, z, rx = 0, ry = 0, rz = 0) {
+  const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.set(rx, ry, rz); g.add(m); return m;
+}
+const GEO = {
+  robe: new THREE.ConeGeometry(0.11, 0.32, 6), head: new THREE.IcosahedronGeometry(0.065, 0),
+  hood: new THREE.ConeGeometry(0.078, 0.1, 6), staff: new THREE.CylinderGeometry(0.012, 0.012, 0.42, 4),
+  tip: new THREE.OctahedronGeometry(0.03, 0), log: new THREE.CylinderGeometry(0.03, 0.03, 0.2, 5),
+  wBody: new THREE.CylinderGeometry(0.13, 0.08, 0.28, 6), wLeg: new THREE.BoxGeometry(0.05, 0.14, 0.05),
+  helm: new THREE.ConeGeometry(0.08, 0.14, 4), spear: new THREE.CylinderGeometry(0.01, 0.01, 0.62, 4),
+  spearTip: new THREE.ConeGeometry(0.025, 0.09, 4), shield: new THREE.CylinderGeometry(0.1, 0.1, 0.025, 8),
+  sRobe: new THREE.ConeGeometry(0.16, 0.5, 7), mantle: new THREE.ConeGeometry(0.18, 0.13, 7),
+  horn: new THREE.ConeGeometry(0.022, 0.15, 4), sStaff: new THREE.CylinderGeometry(0.014, 0.014, 0.72, 5),
+  orb: new THREE.IcosahedronGeometry(0.05, 0), sRing: new THREE.TorusGeometry(0.3, 0.018, 4, 24),
+  hutBase: new THREE.CylinderGeometry(0.3, 0.34, 0.28, 6), hutRoof: new THREE.ConeGeometry(0.44, 0.4, 6),
+  door: new THREE.BoxGeometry(0.12, 0.17, 0.03), rBase: new THREE.BoxGeometry(0.48, 0.3, 0.48),
+  rRoof: new THREE.ConeGeometry(0.42, 0.42, 4), rSpike: new THREE.CylinderGeometry(0.012, 0.012, 0.4, 4),
+  rFlag: new THREE.BoxGeometry(0.16, 0.09, 0.01),
+  pole: new THREE.CylinderGeometry(0.035, 0.05, 0.85, 6), band: new THREE.CylinderGeometry(0.06, 0.06, 0.05, 6),
+  leaf: new THREE.OctahedronGeometry(0.12, 0), frame: new THREE.TorusGeometry(0.1, 0.025, 4, 4),
+  spike: new THREE.ConeGeometry(0.035, 0.18, 4), tRing: new THREE.TorusGeometry(0.34, 0.015, 4, 20),
+  trunk: new THREE.CylinderGeometry(0.03, 0.05, 0.25, 5), cone1: new THREE.ConeGeometry(0.21, 0.36, 6),
+  cone2: new THREE.ConeGeometry(0.15, 0.3, 6), ember: new THREE.ConeGeometry(0.06, 0.13, 5),
+  stone: new THREE.DodecahedronGeometry(0.065, 0), flame: new THREE.ConeGeometry(0.11, 0.32, 5),
+  flame2: new THREE.ConeGeometry(0.06, 0.2, 5), ball: new THREE.IcosahedronGeometry(0.13, 1),
+  boom: new THREE.IcosahedronGeometry(1, 1),
+};
+const FIG = 1.5; // figure scale on the moon
+function makeFollower() {
+  const g = new THREE.Group();
+  part(g, GEO.robe, M(0xe0782a), 0, 0.16, 0);
+  part(g, GEO.head, M(0xc89070), 0, 0.35, 0);
+  part(g, GEO.hood, M(0xb0541a), 0, 0.4, -0.01);
+  part(g, GEO.staff, M(0x5a3a22), 0.1, 0.21, 0.02);
+  part(g, GEO.tip, M(0xffa040, 0xff6010), 0.1, 0.43, 0.02);
+  const log = part(g, GEO.log, M(0x7a5232), 0, 0.27, -0.1, 0, 0, Math.PI / 2); log.visible = false;
+  g.userData.log = log; g.scale.setScalar(FIG); return g;
+}
+function makeWarrior() {
+  const g = new THREE.Group();
+  part(g, GEO.wLeg, M(0x24304a), -0.045, 0.07, 0); part(g, GEO.wLeg, M(0x24304a), 0.045, 0.07, 0);
+  part(g, GEO.wBody, M(0x3a6ad0), 0, 0.27, 0);
+  part(g, GEO.head, M(0xb08a78), 0, 0.46, 0);
+  part(g, GEO.helm, M(0x8ab0e0), 0, 0.53, 0, 0, Math.PI / 4, 0);
+  part(g, GEO.spear, M(0x4a3a2a), 0.15, 0.32, 0.04);
+  part(g, GEO.spearTip, M(0xc8d8f0), 0.15, 0.67, 0.04);
+  part(g, GEO.shield, M(0x2a4aa0), -0.14, 0.27, 0.03, 0, 0, Math.PI / 2);
+  g.scale.setScalar(FIG); return g;
+}
+function makeShaman() {
+  const g = new THREE.Group();
+  part(g, GEO.sRobe, M(0x9a1e2a), 0, 0.25, 0);
+  part(g, GEO.mantle, M(0xe0a030), 0, 0.44, 0);
+  part(g, GEO.head, M(0xc89070), 0, 0.55, 0);
+  part(g, GEO.horn, M(0xf0e0c0), -0.06, 0.64, 0, 0, 0, 0.5); part(g, GEO.horn, M(0xf0e0c0), 0.06, 0.64, 0, 0, 0, -0.5);
+  part(g, GEO.sStaff, M(0x3a2414), 0.17, 0.36, 0.02);
+  g.userData.orb = part(g, GEO.orb, M(0xffc060, 0xff7010), 0.17, 0.75, 0.02);
+  part(g, GEO.sRing, M(0xffb040, 0xc06010), 0, 0.02, 0, Math.PI / 2, 0, 0);
+  g.scale.setScalar(FIG); return g;
+}
+function makeHut(team) {
+  const g = new THREE.Group();
+  if (team === 0) {
+    part(g, GEO.hutBase, M(0x6a4a36), 0, 0.14, 0);
+    part(g, GEO.hutRoof, M(0xd06a2a), 0, 0.48, 0);
+    part(g, GEO.door, M(0x201010, 0x301000), 0, 0.1, 0.31);
+  } else {
+    part(g, GEO.rBase, M(0x34405e), 0, 0.15, 0);
+    part(g, GEO.rRoof, M(0x5a80c0), 0, 0.51, 0, 0, Math.PI / 4, 0);
+    part(g, GEO.rSpike, M(0x2a2a3a), 0, 0.88, 0);
+    part(g, GEO.rFlag, M(0x80c0ff, 0x103060), 0.08, 1.0, 0);
+    part(g, GEO.door, M(0x101828), 0, 0.1, 0.25);
+  }
+  g.scale.setScalar(FIG); return g;
+}
+const TOTEM_COL = { gather: [0x9ad040, 0x406010], build: [0xffb030, 0x804000], war: [0xff4030, 0x801008] };
+function makeTotem(kind) {
+  const g = new THREE.Group();
+  part(g, GEO.pole, M(0x4a2e1e), 0, 0.42, 0);
+  part(g, GEO.band, M(0x2a1a10), 0, 0.3, 0); part(g, GEO.band, M(0x2a1a10), 0, 0.6, 0);
+  const [c, e] = TOTEM_COL[kind], m = M(c, e), glyph = new THREE.Group(); glyph.position.y = 0.98; g.add(glyph);
+  if (kind === 'gather') { const l = part(glyph, GEO.leaf, m, 0, 0, 0); l.scale.set(0.6, 1.3, 0.25); }
+  else if (kind === 'build') { part(glyph, GEO.frame, m, 0, 0, 0, 0, 0, Math.PI / 4); part(glyph, GEO.frame, m, 0, 0, 0, 0, Math.PI / 2, Math.PI / 4); }
+  else { part(glyph, GEO.spike, m, 0, 0.04, 0); part(glyph, GEO.spike, m, -0.08, -0.02, 0, 0, 0, 0.6); part(glyph, GEO.spike, m, 0.08, -0.02, 0, 0, 0, -0.6); }
+  part(g, GEO.tRing, M(c, e), 0, 0.02, 0, Math.PI / 2, 0, 0);
+  g.userData.glyph = glyph; g.scale.setScalar(FIG); return g;
+}
+function makeTree() {
+  const g = new THREE.Group();
+  part(g, GEO.trunk, M(0x2a1d18), 0, 0.12, 0);
+  part(g, GEO.cone1, M(0x2e2a33), 0, 0.36, 0);
+  part(g, GEO.cone2, M(0x3a3340), 0, 0.56, 0);
+  part(g, GEO.ember, M(0xff7a30, 0xd04010), 0, 0.74, 0);
+  g.scale.setScalar(FIG); return g;
+}
+function makeHearth() {
+  const g = new THREE.Group();
+  for (let i = 0; i < 7; i++) { const a = i / 7 * Math.PI * 2; part(g, GEO.stone, M(0x5a5058), Math.cos(a) * 0.22, 0.04, Math.sin(a) * 0.22, i, i * 2, 0); }
+  g.userData.flame = part(g, GEO.flame, M(0xffa030, 0xff5a10), 0, 0.17, 0);
+  part(g, GEO.flame2, M(0xfff0a0, 0xffc040), 0, 0.12, 0);
+  g.scale.setScalar(FIG * 1.3); return g;
+}
+
+// ---- Entities -------------------------------------------------------------------------
+let units = [], huts = [], trees = [], totems = [], shots = [], fx = [], hearth = null, shaman = null, FORD = [];
+let uid = 0;
+const tmpM = new THREE.Matrix4();
+function place(obj, d, h, face, lift = 0) { // stand an object on the moon, up = outward
+  const up = d, f = face ? face.clone().addScaledVector(up, -face.dot(up)) : null;
+  let fwd = f && f.lengthSq() > 1e-8 ? f.normalize() : basis(up)[0];
+  const right = V().crossVectors(up, fwd).normalize(); fwd = V().crossVectors(right, up);
+  tmpM.makeBasis(right, up, fwd); obj.quaternion.setFromRotationMatrix(tmpM);
+  obj.position.copy(d).multiplyScalar(R + h + lift);
+}
+function addUnit(kind, team, d) {
+  const mesh = kind === 'follower' ? makeFollower() : kind === 'warrior' ? makeWarrior() : makeShaman();
+  moon.add(mesh);
+  const hp = kind === 'follower' ? tune.followerHp : kind === 'warrior' ? tune.warriorHp : tune.shamanHp;
+  const u = { id: uid++, kind, team, dir: d.clone(), face: basis(d)[0], hp, maxHp: hp, cd: 0, mesh, task: 'idle',
+    totem: null, carry: 0, chop: 0, tree: null, route: [], routeT: 0, routeTo: null, dead: false, dying: 0,
+    fall: false, off: rng() * Math.PI * 2, wander: null, wanderT: 0, walk: 0, role: null, home: null, flash: 0 };
+  u.h = heightAt(d); units.push(u); return u;
+}
+function addHut(team, d, done = true) {
+  const mesh = makeHut(team); moon.add(mesh);
+  const hp = team === 0 ? tune.hutHp : tune.rivalHutHp;
+  const hut = { team, dir: d.clone(), face: basis(d)[0], hp, maxHp: hp, mesh, done, work: 0, spawnT: 0, dead: false, dying: 0, flash: 0 };
+  hut.h = heightAt(d); huts.push(hut); return hut;
+}
+function addTree(d) {
+  const mesh = makeTree(); moon.add(mesh); mesh.rotation.y = rng() * 6;
+  const t = { dir: d.clone(), wood: tune.treeWood, mesh, face: offsetDir(d, 1, rng() * 6).sub(d), dead: false };
+  t.h = heightAt(d); trees.push(t); return t;
+}
+function addTotem(kind, d) {
+  const mesh = makeTotem(kind); moon.add(mesh);
+  const t = { kind, dir: d.clone(), mesh, crew: [], site: null, built: 0, t: 0, dead: false };
+  t.h = heightAt(d); totems.push(t); return t;
+}
+function removeTotem(t) {
+  t.dead = true; moon.remove(t.mesh);
+  for (const f of t.crew) if (f.totem === t) { f.totem = null; f.task = 'idle'; }
+  if (t.site && !t.site.done) killHut(t.site);
+  totems = totems.filter(x => x !== t);
+}
+function killUnit(u, fall) {
+  if (u.dead) return;
+  u.dead = true; u.dying = fall ? 1.2 : 0.8; u.fall = fall;
+  if (u.totem) u.totem.crew = u.totem.crew.filter(f => f !== u);
+  if (u.kind === 'shaman') { state.shamanT = tune.shamanRespawn; state.cast = null; sweep(500, 120, 0.8, 'triangle', 0.25); }
+  else sweep(u.team === 0 ? 420 : 300, 90, 0.35, 'triangle', 0.12);
+  if (u.team === 1) state.kills++;
+}
+function killHut(hut, fall) {
+  if (hut.dead) return;
+  hut.dead = true; hut.dying = fall ? 1.4 : 0.9; hut.fall = fall;
+  if (hut.team === 1) { if (fall) state.swallowed++; else state.burned++; state.score += fall ? 100 : 60; }
+  rumble(0.6, 300, 0.25);
+}
+function damage(target, dmg, isHut) {
+  target.hp -= dmg; target.flash = 0.15;
+  if (target.hp <= 0) isHut ? killHut(target, false) : killUnit(target, false);
+}
+
+// ---- Scenes: keep only the day-one screens the brief calls for ----------------------------
+let scene, state;
+function clearWorld() {
+  for (const list of [units, huts, trees, totems, shots, fx]) for (const e of list) if (e.mesh) moon.remove(e.mesh);
+  if (hearth) moon.remove(hearth.mesh);
+  units = []; huts = []; trees = []; totems = []; shots = []; fx = []; stamps = [];
+}
+function reset() {
+  seed = Number(params.get('seed')) || CONFIG.seed;
+  noiseSeed = seed;
+  // state.gained: what this run gained or learned, the high the ending shows.
+  state = { t: 0, score: 0, gained: '', wood: tune.startWood, mana: tune.startMana, spell: null, cast: null,
+    shamanT: 0, raidN: 0, nextRaid: tune.raidFirst, warned: false, alert: null, alertT: 0, msg: '', msgT: 0,
+    hint: 0, hintT: 0, swallowed: 0, burned: 0, kills: 0, assignT: 0, terrainT: 0, followers: 0, rivalLeft: 0,
+    huts: 0, pop: 0, reborn: 0 };
+  clearWorld(); bakeBase();
+  stamps = []; rebuildTerrain();
+  // The ford's waypoints: where the arc runs over water, plus a land step at each end.
+  const wet = FORD_SAMPLES.map(s => baseH(s) < 0.02);
+  const first = wet.indexOf(true), last = wet.lastIndexOf(true);
+  FORD = [];
+  for (let i = Math.max(0, first - 2); i <= Math.min(FORD_SAMPLES.length - 1, last + 2); i += 3) FORD.push(FORD_SAMPLES[i]);
+  hearth = { dir: HOME.clone(), mesh: makeHearth() }; moon.add(hearth.mesh); hearth.h = heightAt(HOME);
+  place(hearth.mesh, HOME, hearth.h, null);
+  for (let i = 0; i < tune.startFollowers; i++) addUnit('follower', 0, offsetDir(HOME, 0.7 + rng() * 0.5, i / tune.startFollowers * 6.28));
+  shaman = addUnit('shaman', 0, offsetDir(HOME, 1.1, 5.2));
+  // The forest of ash pines, then scattered pines on both continents.
+  const near = (d, list, r) => list.some(t => dist(t.dir, d) < r);
+  for (let k = 0, n = 0; k < 200 && n < 16; k++) {
+    const d = offsetDir(FOREST, Math.sqrt(rng()) * 1.9, rng() * 6.28), h = baseH(d);
+    if (h > 0.12 && h < 1.4 && !near(d, trees, 0.42) && dist(d, HOME) > 1.8) { addTree(d); n++; }
+  }
+  for (let k = 0, n = 0; k < 300 && n < 14; k++) {
+    const d = offsetDir(HOME, 2 + rng() * 4, rng() * 6.28), h = baseH(d);
+    if (h > 0.12 && h < 1.4 && !near(d, trees, 0.6) && dist(d, HOME) > 2) { addTree(d); n++; }
+  }
+  for (let k = 0, n = 0; k < 300 && n < 9; k++) {
+    const d = offsetDir(CAMP, 3 + rng() * 1.5, rng() * 6.28), h = baseH(d);
+    if (h > 0.12 && h < 1.4 && !near(d, trees, 0.6)) { addTree(d); n++; }
+  }
+  // The blue camp: a ring of huts and their guards.
+  for (let i = 0; i < tune.rivalHuts; i++) {
+    const hut = addHut(1, offsetDir(CAMP, 1.6, i / tune.rivalHuts * 6.28 + 0.3));
+    hut.face = V().subVectors(CAMP, hut.dir); hut.spawnT = tune.guardSpawn * (0.5 + rng() * 0.5);
+  }
+  for (let i = 0; i < tune.startGuards; i++) {
+    const u = addUnit('warrior', 1, offsetDir(CAMP, 0.8 + rng() * 1.6, rng() * 6.28));
+    u.role = 'guard'; u.home = u.dir.clone();
+  }
+  view.target = null; snapView(HOME);
+  countUp();
+}
+function countUp() {
+  state.followers = units.filter(u => u.kind === 'follower' && !u.dead).length;
+  state.huts = huts.filter(h => h.team === 0 && h.done && !h.dead).length;
+  state.rivalLeft = huts.filter(h => h.team === 1 && !h.dead).length;
+  state.pop = tune.popBase + tune.popPerHut * state.huts;
+}
+
+// ---- View -----------------------------------------------------------------------------
+function spin(dx, dy) {
+  view.target = null;
+  const q = new THREE.Quaternion().setFromAxisAngle(YAX, dx).multiply(new THREE.Quaternion().setFromAxisAngle(XAX, dy));
+  moon.quaternion.premultiply(q);
+}
+function focusQuat(d) {
+  const w = d.clone().applyQuaternion(moon.quaternion);
+  const tilt = V(0, 0.28, 1).normalize(); // look slightly down on the point, so the horizon shows
+  return new THREE.Quaternion().setFromUnitVectors(w, tilt).multiply(moon.quaternion);
+}
+function snapView(d) { moon.quaternion.copy(new THREE.Quaternion()); moon.quaternion.copy(focusQuat(d)); moon.updateMatrixWorld(); }
+function focus(d) { view.target = focusQuat(d); }
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+function pick(mx, my) { // the moon direction under a screen point, or null
+  ndc.set(mx / W * 2 - 1, -(my / H * 2 - 1));
+  moon.updateMatrixWorld(); ray.setFromCamera(ndc, camera);
+  const inv = moon.matrixWorld.clone().invert();
+  const o = ray.ray.origin.clone().applyMatrix4(inv), dv = ray.ray.direction.clone().transformDirection(inv);
+  let r = R + 0.5, d = null;
+  for (let k = 0; k < 4; k++) {
+    const b = o.dot(dv), c = o.dot(o) - r * r, disc = b * b - c;
+    if (disc < 0) return d;
+    const p = o.clone().addScaledVector(dv, -b - Math.sqrt(disc));
+    d = p.normalize(); r = R + Math.max(0, heightAt(d));
+  }
+  return d;
+}
+function toScreen(d, h) { // screen point of a moon spot, and whether it faces the camera
+  const p = d.clone().multiplyScalar(R + h).applyMatrix4(moon.matrixWorld);
+  const facing = d.clone().applyQuaternion(moon.quaternion).dot(V().subVectors(camera.position, p).normalize()) > 0.05;
+  const s = p.clone().project(camera);
+  return { x: (s.x + 1) / 2 * W, y: (1 - s.y) / 2 * H, facing, wx: p.x, wy: p.y };
+}
+
+// ---- Movement on the sphere -----------------------------------------------------------
+const OFFS = [0, 0.5, -0.5, 1.0, -1.0, 1.6, -1.6, 2.3, -2.3];
+function stepToward(u, tgt, speed, dt) { // one step along the great circle, steering round what blocks it
+  const ang = Math.acos(Math.max(-1, Math.min(1, u.dir.dot(tgt))));
+  if (ang * R < 0.06) return true;
+  let st = speed * dt / R; if (u.h < 0) st *= tune.wadeSpeed;
+  st = Math.min(st, ang);
+  const axis = V().crossVectors(u.dir, tgt);
+  if (axis.lengthSq() < 1e-12) axis.copy(basis(u.dir)[0]);
+  axis.normalize();
+  const here = blocked(u.dir);
+  for (const off of OFFS) {
+    const ax = off ? axis.clone().applyAxisAngle(u.dir, off) : axis;
+    const nd = u.dir.clone().applyAxisAngle(ax, st);
+    if (here || !blocked(nd)) {
+      u.face = V().subVectors(nd, u.dir); u.dir.copy(nd).normalize(); u.walk += dt; return false;
+    }
+  }
+  return false;
+}
+function lineClear(a, b) {
+  const n = Math.ceil(dist(a, b) / 0.45);
+  for (let i = 1; i < n; i++) if (blocked(slerpDir(a, b, i / n))) return false;
+  return true;
+}
+function fordRoute(a, b) {
+  let ia = 0, ib = 0, da = 9, db = 9;
+  FORD.forEach((p, i) => { const x = 1 - p.dot(a), y = 1 - p.dot(b); if (x < da) { da = x; ia = i; } if (y < db) { db = y; ib = i; } });
+  const r = ia <= ib ? FORD.slice(ia, ib + 1) : FORD.slice(ib, ia + 1).reverse();
+  return r.length > 1 ? r : [];
+}
+function goTo(u, tgt, speed, dt) { // walk there, by the ford if the sea or a wall is in the way
+  u.routeT -= dt;
+  if (u.routeT <= 0 || !u.routeTo || dist(u.routeTo, tgt) > 1) {
+    u.routeT = 1.5 + rng(); u.routeTo = tgt.clone();
+    u.route = lineClear(u.dir, tgt) ? [] : fordRoute(u.dir, tgt);
+  }
+  if (u.route.length) {
+    const wp = u.route[0];
+    stepToward(u, wp, speed, dt);
+    if (dist(u.dir, wp) < 0.7) u.route.shift();
+    return false;
+  }
+  return stepToward(u, tgt, speed, dt);
+}
+function nearest(list, d, range, test) {
+  let best = null, bd = range;
+  for (const e of list) { if (e.dead || (test && !test(e))) continue; const x = dist(e.dir, d); if (x < bd) { bd = x; best = e; } }
+  return best;
+}
+function fight(u, foe, isHut, speed, dmg, dt) {
+  const reach = tune.meleeRange + (isHut ? 0.35 : 0);
+  if (dist(u.dir, foe.dir) > reach) { goTo(u, foe.dir, speed, dt); return; }
+  u.face = V().subVectors(foe.dir, u.dir);
+  if (u.cd <= 0) {
+    u.cd = tune.hitEvery; damage(foe, dmg, isHut);
+    tone(u.team === 0 ? 260 : 180, 0.05, 'square', 0.04);
+  }
+}
+
+// ---- Your tribe -----------------------------------------------------------------------
+function dropPoint(d) {
+  let best = hearth.dir, bd = dist(d, hearth.dir);
+  for (const h of huts) if (h.team === 0 && h.done && !h.dead) { const x = dist(d, h.dir); if (x < bd) { bd = x; best = h.dir; } }
+  return best;
+}
+function crewSpot(u, t) { return offsetDir(t.dir, 0.45 + (u.id % 3) * 0.18, u.off); }
+function hutSite(t) {
+  for (let i = 0; i < 10; i++) {
+    const d = offsetDir(t.dir, 1.0 + (i > 5 ? 0.6 : 0), i * 1.05 + t.built * 0.6);
+    const h = heightAt(d);
+    if (h > 0.05 && h < 1.4 && !hotAt(d) && !huts.some(x => !x.dead && dist(x.dir, d) < 0.95) && dist(d, hearth.dir) > 0.9) return d;
+  }
+  return null;
+}
+function updFollower(u, dt) {
+  const sp = tune.followerSpeed;
+  const foe = nearest(units, u.dir, u.task === 'war' ? tune.warAggro : tune.defendRange, e => e.team === 1);
+  if (foe) { u.chop = 0; fight(u, foe, false, sp, tune.followerDmg, dt); return; }
+  const t = u.totem;
+  if (u.task === 'gather' && t) {
+    if (u.carry) { if (goTo(u, dropPoint(u.dir), sp, dt) || dist(u.dir, dropPoint(u.dir)) < 0.35) { u.carry = 0; state.wood++; } return; }
+    if (!u.tree || u.tree.dead) u.tree = nearest(trees, t.dir, tune.gatherRadius, tr => tr.wood > 0);
+    if (!u.tree) { goTo(u, crewSpot(u, t), sp, dt); return; }
+    if (dist(u.dir, u.tree.dir) > 0.32) { goTo(u, u.tree.dir, sp, dt); return; }
+    u.face = V().subVectors(u.tree.dir, u.dir); u.chop += dt;
+    if ((chopSfxT -= dt) < 0) { chopSfxT = 0.35; tone(720 + rng() * 200, 0.03, 'square', 0.025); }
+    if (u.chop >= tune.chopTime) {
+      u.chop = 0; u.carry = 1; u.tree.wood--;
+      if (u.tree.wood <= 0) { u.tree.dead = true; moon.remove(u.tree.mesh); trees = trees.filter(x => x !== u.tree); u.tree = null; }
+    }
+    return;
+  }
+  if (u.task === 'build' && t) {
+    if (!t.site && state.wood >= tune.hutCost && t.built < 3) {
+      const d = hutSite(t);
+      if (d) { t.site = addHut(0, d, false); t.site.face = V().subVectors(t.dir, d); state.wood -= tune.hutCost; }
+      else t.built = 3;
+    }
+    if (t.site && !t.site.dead) {
+      if (dist(u.dir, t.site.dir) > 0.5) { goTo(u, t.site.dir, sp, dt); return; }
+      u.face = V().subVectors(t.site.dir, u.dir); t.site.work += dt;
+      if ((chopSfxT -= dt) < 0) { chopSfxT = 0.4; tone(160 + rng() * 60, 0.05, 'triangle', 0.05); }
+      if (t.site.work >= tune.hutWork) {
+        t.site.done = true; t.site.hp = tune.hutHp; t.site.spawnT = tune.hutSpawn; t.built++; t.site = null;
+        tone(220, 0.25, 'triangle', 0.2); tone(330, 0.35, 'triangle', 0.15); state.hutsBuilt = (state.hutsBuilt || 0) + 1;
+      }
+      return;
+    }
+    if (t.site && t.site.dead) t.site = null;
+    goTo(u, crewSpot(u, t), sp, dt); return;
+  }
+  if (u.task === 'war' && t) {
+    const rh = nearest(huts, u.dir, tune.warAggro, h => h.team === 1);
+    if (rh) { fight(u, rh, true, sp, tune.followerDmg * 0.5, dt); return; }
+    goTo(u, crewSpot(u, t), sp, dt); return;
+  }
+  // Idle: rest near the hearth (huts and fire), drifting a little.
+  if ((u.wanderT -= dt) <= 0 || !u.wander) { u.wanderT = 3 + rng() * 4; u.wander = offsetDir(hearth.dir, 0.5 + rng() * 1.1, rng() * 6.28); }
+  goTo(u, u.wander, sp * 0.6, dt);
+}
+function assignCrews() { // each totem claims its quota from the nearest free followers
+  for (const t of totems) {
+    t.crew = t.crew.filter(f => !f.dead && f.totem === t);
+    while (t.crew.length < tune.totemQuota) {
+      const f = nearest(units, t.dir, 999, e => e.kind === 'follower' && !e.totem);
+      if (!f) break;
+      f.totem = t; f.task = t.kind; f.route = []; f.routeT = 0; f.tree = null; t.crew.push(f);
+    }
+  }
+}
+function updShaman(u, dt) {
+  const sp = tune.shamanSpeed;
+  if (state.cast) {
+    const c = state.cast, range = tune[c.spell + 'Range'];
+    if (dist(u.dir, c.dir) <= range) { castSpell(c.spell, c.dir); state.cast = null; u.goal = null; }
+    else goTo(u, c.dir, sp, dt);
+    return;
+  }
+  if (u.goal && goTo(u, u.goal, sp, dt)) u.goal = null;
+}
+
+// ---- Spells ---------------------------------------------------------------------------
+const SPELLS = {
+  ember: { key: 'KeyQ', name: 'Ember', costK: 'emberCost' },
+  raise: { key: 'KeyW', name: 'Raise', costK: 'raiseCost' },
+  fissure: { key: 'KeyE', name: 'Fissure', costK: 'fissureCost' },
+};
+function say(m, t = 2.5) { state.msg = m; state.msgT = t; }
+function castSpell(spell, d) {
+  const cost = tune[SPELLS[spell].costK];
+  if (state.mana < cost) { say('Not enough mana'); tone(110, 0.2, 'square', 0.1); return; }
+  state.mana -= cost; events.push({ cast: spell });
+  if (spell === 'ember') {
+    const mesh = new THREE.Group();
+    part(mesh, GEO.ball, M(0xffb050, 0xff6a10), 0, 0, 0);
+    moon.add(mesh);
+    shots.push({ from: shaman.dir.clone(), fh: shaman.h + 1.1, to: d.clone(), t: 0, mesh });
+    rumble(0.4, 1800, 0.12);
+  } else if (spell === 'raise') {
+    const st = { kind: 'raise', dir: d.clone(), rad: tune.raiseRadius, full: tune.raiseHeight, cur: 0, grow: 0 };
+    st.cosR = Math.cos(st.rad / R); stamps.push(st);
+    sweep(70, 260, 0.8, 'sawtooth', 0.18); rumble(0.9, 220, 0.3); view.shake = 0.25;
+    if (state.hint === 3) { state.hint = 4; state.hintFour = state.t; }
+  } else {
+    const st = { kind: 'fissure', dir: d.clone(), rad: tune.fissureRadius, cur: 0, open: 0, heat: 1 };
+    const head = V().subVectors(d, shaman.dir); head.addScaledVector(d, -head.dot(d));
+    if (head.lengthSq() < 1e-8) head.copy(basis(d)[0]);
+    head.normalize();
+    // The crack runs away from the shaman; up close it runs across, so it never opens under her.
+    st.ax = dist(shaman.dir, d) < tune.fissureRadius * 1.6 ? V().crossVectors(d, head).normalize() : head;
+    st.bx = V().crossVectors(d, st.ax).normalize(); st.cosR = Math.cos(st.rad * 1.6 / R);
+    stamps.push(st);
+    for (const u of units) if (!u.dead && fissureX(st, u.dir) < 1) killUnit(u, true);
+    for (const h of huts) if (!h.dead && fissureX(st, h.dir) < 1) killHut(h, true);
+    for (const t of trees) if (!t.dead && fissureX(st, t.dir) < 1) { t.dead = true; t.dying = 1.2; }
+    for (const t of [...totems]) if (fissureX(st, t.dir) < 1) removeTotem(t);
+    sweep(90, 30, 1.6, 'sawtooth', 0.3); rumble(2.2, 160, 0.6); view.shake = 0.9;
+    addFx('boom', d, 0.9, 0xff5010, 1.8);
+  }
+}
+function addFx(kind, d, dur, color, size) {
+  const mesh = new THREE.Mesh(GEO.boom, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending }));
+  moon.add(mesh); fx.push({ kind, dir: d.clone(), t: 0, dur, mesh, size, h: Math.max(0, heightAt(d)) });
+}
+function updShots(dt) {
+  for (const s of shots) {
+    s.t += dt;
+    if (s.t >= tune.emberFlight) {
+      s.dead = true; moon.remove(s.mesh);
+      for (const u of units) if (!u.dead && u.team === 1 && dist(u.dir, s.to) < tune.emberRadius) damage(u, tune.emberDmg, false);
+      for (const h of huts) if (!h.dead && h.team === 1 && dist(h.dir, s.to) < tune.emberRadius + 0.3) damage(h, tune.emberDmg / 1.5, true);
+      addFx('boom', s.to, 0.5, 0xffa040, tune.emberRadius); rumble(0.5, 700, 0.3);
+    }
+  }
+  shots = shots.filter(s => !s.dead);
+}
+function updStamps(dt) {
+  let moving = false;
+  for (const st of stamps) {
+    if (st.kind === 'raise') {
+      if (st.grow < 1) { st.grow = Math.min(1, st.grow + dt / 0.7); st.cur = st.full * (1 - (1 - st.grow) ** 3); moving = true; }
+    } else {
+      st.open = Math.min(1, st.open + dt / 0.35);
+      st.heat = Math.max(0, st.heat - dt / tune.fissureCool);
+      st.cur = -tune.fissureDepth * (1 - (1 - st.open) ** 2) * Math.sqrt(st.heat);
+      moving = true;
+    }
+  }
+  stamps = stamps.filter(s => !(s.kind === 'fissure' && s.heat <= 0));
+  if (moving) T.dirty = true;
+}
+
+// ---- The blue tribe -------------------------------------------------------------------
+function updWarrior(u, dt) {
+  const sp = tune.warriorSpeed, dmg = tune.warriorDmg;
+  if (u.role === 'guard') {
+    const foe = nearest(units, u.dir, tune.guardAggro, e => e.team === 0);
+    if (foe && dist(foe.dir, u.home) < tune.guardLeash) { fight(u, foe, false, sp, dmg, dt); return; }
+    if (dist(u.dir, u.home) > 0.2) goTo(u, u.home, sp * 0.8, dt);
+    return;
+  }
+  // A raider: the nearest thing of yours, anywhere.
+  if ((u.seekT = (u.seekT || 0) - dt) <= 0 || !u.prey || u.prey.dead) {
+    u.seekT = 1;
+    const pu = nearest(units, u.dir, 999, e => e.team === 0), ph = nearest(huts, u.dir, 999, h => h.team === 0);
+    u.prey = pu && (!ph || dist(pu.dir, u.dir) < dist(ph.dir, u.dir) + 1.5) ? pu : ph; u.preyHut = u.prey === ph;
+  }
+  if (u.prey) fight(u, u.prey, u.preyHut, sp, dmg, dt);
+}
+function updRival(dt) {
+  const guards = units.filter(u => !u.dead && u.role === 'guard').length;
+  for (const h of huts) {
+    if (h.dead || h.team !== 1) continue;
+    if ((h.spawnT -= dt) <= 0) {
+      h.spawnT = tune.guardSpawn;
+      if (guards < tune.guardCap) { const u = addUnit('warrior', 1, offsetDir(h.dir, 0.4, rng() * 6.28)); u.role = 'guard'; u.home = offsetDir(CAMP, 0.6 + rng() * 1.8, rng() * 6.28); }
+    }
+  }
+  if (!state.warned && state.t >= state.nextRaid - tune.raidWarn && state.rivalLeft > 0) {
+    state.warned = true; say(`A raid is coming from the blue camp!  F: look`, 4); state.alert = CAMP.clone(); state.alertT = tune.raidWarn + 4;
+    sweep(140, 110, 1.2, 'sawtooth', 0.22); setTimeoutSafe(() => sweep(140, 100, 1.2, 'sawtooth', 0.22), 0.6);
+  }
+  if (state.t >= state.nextRaid && state.rivalLeft > 0) {
+    const n = tune.raidBase + tune.raidGrow * state.raidN;
+    for (let i = 0; i < n; i++) { const u = addUnit('warrior', 1, offsetDir(CAMP, 0.4 + rng() * 0.8, rng() * 6.28)); u.role = 'raid'; }
+    state.raidN++; state.nextRaid += tune.raidEvery; state.warned = false;
+    events.push({ raid: n });
+    if (state.raidN === 1 && !totems.some(t => t.kind === 'war')) say('Press 3: a War totem calls followers to fight there', 5);
+  }
+  const raider = units.find(u => !u.dead && u.role === 'raid');
+  if (raider) { state.alert = raider.dir.clone(); state.alertT = Math.max(state.alertT, 0.5); }
+}
+const pendingSfx = []; // sound after a delay, counted in game time
+function setTimeoutSafe(fn, t) { pendingSfx.push({ fn, t }); }
+
+// ---- Play: the step -------------------------------------------------------------------
+function plant(kind) {
+  const d = pick(mouse.x, mouse.y);
+  if (!d) { say('Point at the moon to plant a totem'); return; }
+  const h = heightAt(d);
+  if (h < 0.02 || h > tune.cliff || hotAt(d)) { say('Totems need dry ground'); tone(110, 0.15, 'square', 0.08); return; }
+  if (totems.length >= tune.totemMax) removeTotem(totems[0]);
+  addTotem(kind, d); assignCrews(); tone(kind === 'war' ? 330 : kind === 'build' ? 392 : 523, 0.25, 'sine', 0.2);
+  addFx('ring', d, 0.6, TOTEM_COL[kind][0], 0.6);
+  if (state.hint === 0 && kind === 'gather') state.hint = 1;
+  if (state.hint === 1 && kind === 'build') state.hint = 2;
+}
+function handleClick(c) {
+  if (shaman.dead) { say('Your shaman is being reborn'); return; }
+  const d = pick(c.x, c.y);
+  if (!d) return;
+  if (state.spell && !c.right) {
+    const s = state.spell, cost = tune[SPELLS[s].costK];
+    if (state.mana < cost) { say(`${SPELLS[s].name} needs ${cost} mana`); tone(110, 0.2, 'square', 0.1); return; }
+    state.cast = { spell: s, dir: d }; state.spell = null; shaman.goal = null;
+    if (dist(shaman.dir, d) > tune[s + 'Range']) say('Your shaman walks into range…', 1.5);
+    addFx('ring', d, 0.5, 0xffd080, 0.5); tone(660, 0.08, 'sine', 0.12);
+    return;
+  }
+  state.cast = null; state.spell = null; shaman.goal = d;
+  addFx('ring', d, 0.5, 0xffc060, 0.4); tone(880, 0.06, 'sine', 0.1);
+}
+function updPlay(dt) {
+  state.t += dt;
+  // View controls
+  const ks = 1.6 * dt * view.dist / 30;
+  if (down.has('ArrowLeft')) spin(-ks, 0); if (down.has('ArrowRight')) spin(ks, 0);
+  if (down.has('ArrowUp')) spin(0, -ks); if (down.has('ArrowDown')) spin(0, ks);
+  if (pressed('Space') && !shaman.dead) focus(shaman.dir);
+  if (pressed('KeyH')) focus(hearth.dir);
+  if (pressed('KeyF') && state.alert) focus(state.alert);
+  if (pressed('Equal') || pressed('NumpadAdd')) view.dist = Math.max(17, view.dist - 3);
+  if (pressed('Minus') || pressed('NumpadSubtract')) view.dist = Math.min(48, view.dist + 3);
+  // Orders
+  if (pressed('Digit1')) plant('gather');
+  if (pressed('Digit2')) plant('build');
+  if (pressed('Digit3')) plant('war');
+  if (pressed('KeyX')) { const d = pick(mouse.x, mouse.y); const t = d && nearest(totems, d, 2); if (t) { removeTotem(t); tone(200, 0.15, 'sine', 0.15); } }
+  for (const k in SPELLS) if (pressed(SPELLS[k].key)) { state.spell = state.spell === k ? null : k; tone(state.spell ? 600 : 300, 0.06, 'sine', 0.1); }
+  for (const c of mouse.clicks) handleClick(c);
+  mouse.clicks.length = 0;
+  // The tribe
+  if ((state.assignT -= dt) <= 0) { state.assignT = 0.5; assignCrews(); }
+  let working = 0, idle = 0;
+  for (const u of units) {
+    if (u.dead) continue;
+    u.cd -= dt; u.flash -= dt;
+    if (u.kind === 'follower') { updFollower(u, dt); u.task === 'idle' ? idle++ : working++; }
+    else if (u.kind === 'shaman') updShaman(u, dt);
+    else updWarrior(u, dt);
+    u.h = heightAt(u.dir);
+  }
+  countUp();
+  state.mana = Math.min(tune.manaMax, state.mana + dt * (working * tune.manaWork + idle * tune.manaIdle + state.huts * tune.manaHut));
+  for (const h of huts) {
+    if (h.dead) continue; h.flash -= dt; h.h = heightAt(h.dir);
+    if (h.team === 0 && h.done && (h.spawnT -= dt) <= 0) {
+      h.spawnT = tune.hutSpawn;
+      if (state.followers < state.pop) { addUnit('follower', 0, offsetDir(h.dir, 0.45, rng() * 6.28)); tone(523, 0.1, 'sine', 0.08); }
+    }
+  }
+  for (const t of trees) t.h = heightAt(t.dir);
+  for (const t of totems) { t.h = heightAt(t.dir); t.t += dt; }
+  // Shaman reborn at the hearth
+  if (shaman.dead && shaman.dying <= 0 && state.shamanT > 0) {
+    if ((state.shamanT -= dt) <= 0) {
+      units = units.filter(u => u !== shaman); moon.remove(shaman.mesh);
+      shaman = addUnit('shaman', 0, offsetDir(HOME, 0.6, 5.2)); state.reborn++;
+      addFx('ring', shaman.dir, 0.8, 0xffb040, 0.8); sweep(200, 700, 0.6, 'sine', 0.2);
+    }
+  }
+  updShots(dt); updStamps(dt); updRival(dt);
+  for (const p of pendingSfx) if ((p.t -= dt) <= 0) { p.fn(); p.done = true; }
+  for (let i = pendingSfx.length - 1; i >= 0; i--) if (pendingSfx[i].done) pendingSfx.splice(i, 1);
+  // Dying things sink or crumple, then go.
+  for (const list of [units, huts]) for (const e of list) if (e.dead && e.dying > 0) e.dying -= dt;
+  units = units.filter(u => { if (u.dead && u.dying <= 0 && u !== shaman) { moon.remove(u.mesh); return false; } return true; });
+  huts = huts.filter(h => { if (h.dead && h.dying <= 0) { moon.remove(h.mesh); return false; } return true; });
+  for (const t of trees) if (t.dead && t.dying > 0 && (t.dying -= dt) <= 0) moon.remove(t.mesh);
+  trees = trees.filter(t => !(t.dead && t.dying <= 0 && t.dying !== undefined) && !(t.dead && t.dying === undefined));
+  for (const f of fx) if ((f.t += dt) >= f.dur) { moon.remove(f.mesh); f.done = true; }
+  fx = fx.filter(f => !f.done);
+  if ((state.terrainT -= dt) <= 0 && T.dirty) { state.terrainT = 0.05; rebuildTerrain(); }
+  if (state.msgT > 0) state.msgT -= dt;
+  if (state.alertT > 0) state.alertT -= dt; else state.alert = null;
+  // Hints, taught by doing
+  state.hintT += dt;
+  if (state.hint === 2) {
+    const w = CAMP.clone().applyQuaternion(moon.quaternion);
+    if (w.z > 0.55) { state.hint = 3; state.hintT = 0; }
+  }
+  if (state.hint === 4 && state.t - state.hintFour > 20) state.hint = 5;
+  // The end
+  countUp();
+  if (state.rivalLeft === 0) {
+    const m = Math.floor(state.t / 60), s = Math.floor(state.t % 60);
+    state.score += Math.max(0, 600 - Math.floor(state.t));
+    state.gained = `The blue camp is gone: ${state.swallowed} swallowed, ${state.burned} burned, in ${m}:${String(s).padStart(2, '0')}`;
+    scene = 'results'; tone(392, 0.4, 'triangle', 0.25); tone(523, 0.6, 'triangle', 0.2); tone(659, 0.9, 'triangle', 0.2);
+  } else if (state.followers === 0) {
+    state.gained = 'Your tribe is gone. The ember moon is quiet.';
+    scene = 'over'; sweep(300, 60, 1.5, 'triangle', 0.3);
+  }
+}
+
+// ---- Drawing the moon -----------------------------------------------------------------
+const ringLine = (() => {
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(65 * 3), 3));
+  const l = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0xffd080, transparent: true, opacity: 0.8 }));
+  l.visible = false; moon.add(l); return l;
+})();
+const aimLine = (() => {
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(65 * 3), 3));
+  const l = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0xff8040 })); l.visible = false; moon.add(l); return l;
+})();
+function drawRing(line, c, rad, ellipse) {
+  const a = line.geometry.attributes.position.array;
+  for (let i = 0; i <= 64; i++) {
+    const ang = i / 64 * Math.PI * 2;
+    let d;
+    if (ellipse) {
+      const t = ellipse.ax.clone().multiplyScalar(Math.cos(ang) * rad * 1.5 / R).addScaledVector(ellipse.bx, Math.sin(ang) * rad * 0.75 / R);
+      d = c.clone().add(t).normalize();
+    } else d = offsetDir(c, rad, ang);
+    const r = R + Math.max(0.02, heightAt(d)) + 0.06;
+    a[i * 3] = d.x * r; a[i * 3 + 1] = d.y * r; a[i * 3 + 2] = d.z * r;
+  }
+  line.geometry.attributes.position.needsUpdate = true; line.geometry.computeBoundingSphere(); line.visible = true;
+}
+function drawMoon() {
+  // Camera and the spin toward a focus
+  if (view.target) { moon.quaternion.slerp(view.target, 0.12); if (moon.quaternion.angleTo(view.target) < 0.002) view.target = null; }
+  view.shake = Math.max(0, view.shake - 1 / 60);
+  const sh = view.shake * 0.35;
+  camera.position.set(Math.sin(state.t * 53) * sh, Math.cos(state.t * 47) * sh, view.dist);
+  camera.lookAt(0, 0, 0);
+  pulse.value = 0.75 + 0.25 * Math.sin(state.t * 2.2);
+  halo.material.opacity = 0.06 + 0.02 * Math.sin(state.t * 1.3);
+  moon.updateMatrixWorld();
+  for (const u of units) {
+    const bob = u.walk ? Math.abs(Math.sin(u.walk * 9)) * 0.04 : 0;
+    place(u.mesh, u.dir, Math.max(u.h, -0.16), u.face, bob);
+    if (u.dead) {
+      const k = u.fall ? 1 - u.dying / 1.2 : 1 - u.dying / 0.8;
+      if (u.fall) u.mesh.position.multiplyScalar(1 - k * 0.18 / R * 10);
+      u.mesh.rotateX(k * 1.4);
+      u.mesh.scale.setScalar(FIG * Math.max(0.05, 1 - k * 0.6));
+    }
+    if (u.mesh.userData.log) u.mesh.userData.log.visible = !!u.carry;
+    if (u.kind === 'follower' && u.chop > 0) u.mesh.rotateX(Math.sin(state.t * 14) * 0.25);
+    if (u.mesh.userData.orb) u.mesh.userData.orb.scale.setScalar(state.spell || state.cast ? 1.5 + Math.sin(state.t * 10) * 0.3 : 1);
+  }
+  for (const h of huts) {
+    place(h.mesh, h.dir, h.h, h.face);
+    const b = h.done ? 1 : 0.15 + 0.85 * Math.min(1, h.work / tune.hutWork);
+    h.mesh.scale.set(FIG, FIG * b, FIG);
+    if (h.dead) { const k = 1 - h.dying / (h.fall ? 1.4 : 0.9); h.mesh.position.multiplyScalar(1 - k * (h.fall ? 0.22 : 0.04)); h.mesh.scale.y = FIG * (1 - k * 0.7); }
+  }
+  for (const t of trees) {
+    place(t.mesh, t.dir, t.h, t.face);
+    if (t.dead && t.dying > 0) t.mesh.position.multiplyScalar(1 - (1 - t.dying / 1.2) * 0.2);
+  }
+  for (const t of totems) { place(t.mesh, t.dir, t.h, null); t.mesh.userData.glyph.rotation.y = t.t * 1.6; }
+  if (hearth) { hearth.h = heightAt(hearth.dir); place(hearth.mesh, hearth.dir, hearth.h, null); hearth.mesh.userData.flame.scale.set(1, 0.85 + 0.3 * Math.abs(Math.sin(state.t * 7)), 1); }
+  for (const s of shots) {
+    const k = Math.min(1, s.t / tune.emberFlight), d = slerpDir(s.from, s.to, k);
+    const h = s.fh * (1 - k) + Math.max(0, heightAt(s.to)) * k + Math.sin(k * Math.PI) * 1.4;
+    s.mesh.position.copy(d).multiplyScalar(R + h);
+  }
+  for (const f of fx) {
+    const k = f.t / f.dur;
+    f.mesh.position.copy(f.dir).multiplyScalar(R + f.h + 0.1);
+    if (f.kind === 'ring') { place(f.mesh, f.dir, f.h, null, 0.05); f.mesh.scale.set(f.size * (0.3 + k), 0.04, f.size * (0.3 + k)); }
+    else f.mesh.scale.setScalar(f.size * (0.3 + k * 0.9));
+    f.mesh.material.opacity = 0.8 * (1 - k);
+  }
+  // Aim: the shaman's range, and what the spell will cover
+  ringLine.visible = aimLine.visible = false;
+  const sp = state.spell || (state.cast && state.cast.spell);
+  if (sp && !shaman.dead && scene === 'play') {
+    drawRing(ringLine, shaman.dir, tune[sp + 'Range']);
+    const d = state.cast ? state.cast.dir : pick(mouse.x, mouse.y);
+    if (d) {
+      const rad = sp === 'ember' ? tune.emberRadius : sp === 'raise' ? tune.raiseRadius : tune.fissureRadius;
+      let ell = null;
+      if (sp === 'fissure') {
+        const head = V().subVectors(d, shaman.dir); head.addScaledVector(d, -head.dot(d));
+        if (head.lengthSq() > 1e-8) { head.normalize(); const ax = dist(shaman.dir, d) < tune.fissureRadius * 1.6 ? V().crossVectors(d, head).normalize() : head; ell = { ax, bx: V().crossVectors(d, ax).normalize() }; }
+      }
+      drawRing(aimLine, d, rad, ell);
+    }
+  }
+  renderer.render(world, camera);
+}
+
+// ---- HUD ------------------------------------------------------------------------------
+function panel(x, y, w, h, a = 0.55) {
+  ctx.fillStyle = `rgba(20,10,30,${a})`; ctx.strokeStyle = 'rgba(255,150,80,0.45)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, 8); ctx.fill(); ctx.stroke();
+}
+function icon(kind, x, y, s, on) { // HUD glyphs, drawn as paths
+  ctx.save(); ctx.translate(x, y); ctx.scale(s, s); ctx.lineWidth = 2.2 / s; ctx.lineJoin = 'round';
+  const c = on ? 1 : 0.35;
+  const col = { gather: '#9ad040', build: '#ffb030', war: '#ff5040', ember: '#ffa040', raise: '#d0a080', fissure: '#ff5a20', wood: '#b07a48', mana: '#ffb040', folk: '#e0782a', blue: '#5a8ad0' }[kind];
+  ctx.globalAlpha = c; ctx.fillStyle = col; ctx.strokeStyle = col;
+  ctx.beginPath();
+  if (kind === 'gather') { ctx.moveTo(0, -10); ctx.quadraticCurveTo(9, -2, 0, 10); ctx.quadraticCurveTo(-9, -2, 0, -10); ctx.fill(); ctx.strokeStyle = '#2a3a10'; ctx.beginPath(); ctx.moveTo(0, -6); ctx.lineTo(0, 8); ctx.stroke(); }
+  else if (kind === 'build') { ctx.moveTo(-10, 0); ctx.lineTo(0, -10); ctx.lineTo(10, 0); ctx.lineTo(7, 0); ctx.lineTo(7, 9); ctx.lineTo(-7, 9); ctx.lineTo(-7, 0); ctx.closePath(); ctx.fill(); ctx.fillStyle = '#301808'; ctx.fillRect(-2.5, 3, 5, 6); }
+  else if (kind === 'war') { ctx.moveTo(0, -11); ctx.lineTo(3, -4); ctx.lineTo(1.5, -4); ctx.lineTo(1.5, 10); ctx.lineTo(-1.5, 10); ctx.lineTo(-1.5, -4); ctx.lineTo(-3, -4); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(-7, 2); ctx.lineTo(7, 2); ctx.stroke(); }
+  else if (kind === 'ember') { ctx.moveTo(0, -11); ctx.bezierCurveTo(8, -3, 8, 6, 0, 10); ctx.bezierCurveTo(-8, 6, -8, -3, 0, -11); ctx.fill(); ctx.fillStyle = '#fff0a0'; ctx.beginPath(); ctx.moveTo(0, -2); ctx.bezierCurveTo(4, 2, 4, 6, 0, 8); ctx.bezierCurveTo(-4, 6, -4, 2, 0, -2); ctx.fill(); }
+  else if (kind === 'raise') { ctx.moveTo(-11, 9); ctx.lineTo(-4, -2); ctx.lineTo(0, 3); ctx.lineTo(5, -8); ctx.lineTo(11, 9); ctx.closePath(); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.beginPath(); ctx.moveTo(5, -4); ctx.lineTo(5, -11); ctx.moveTo(2, -8); ctx.lineTo(5, -11); ctx.lineTo(8, -8); ctx.stroke(); }
+  else if (kind === 'fissure') { ctx.fillStyle = '#4a3a40'; ctx.fillRect(-11, -4, 22, 13); ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(-3, -4); ctx.lineTo(1, 1); ctx.lineTo(-2, 4); ctx.lineTo(2, 9); ctx.lineTo(5, 9); ctx.lineTo(2, 4); ctx.lineTo(5, 1); ctx.lineTo(1, -4); ctx.closePath(); ctx.fill(); }
+  else if (kind === 'wood') { ctx.fillRect(-10, -3, 20, 7); ctx.fillStyle = '#e0b080'; ctx.beginPath(); ctx.ellipse(10, 0.5, 2.5, 3.5, 0, 0, 6.3); ctx.fill(); }
+  else if (kind === 'mana') { ctx.moveTo(0, -10); ctx.lineTo(7, 0); ctx.lineTo(0, 10); ctx.lineTo(-7, 0); ctx.closePath(); ctx.fill(); }
+  else if (kind === 'folk' || kind === 'blue') { ctx.moveTo(0, -4); ctx.lineTo(7, 10); ctx.lineTo(-7, 10); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.arc(0, -7, 3.5, 0, 6.3); ctx.fillStyle = kind === 'folk' ? '#c89070' : '#b08a78'; ctx.fill(); }
+  ctx.restore();
+}
+const HINTS = [
+  'Point at the dark ash pines and press 1: a Gather totem sends followers for wood',
+  'Point near the hearth and press 2: a Build totem raises huts from the wood',
+  'Drag or use the arrow keys to spin the moon. The blue camp lies east, over the sea',
+  'Click the shore to walk your shaman there, then press W and click the sea: Raise lifts land',
+  'Q Ember burns raiders · E Fissure swallows all that stands on it. Swallow every blue hut',
+];
+function drawHud() {
+  ctx.clearRect(0, 0, W, H);
+  // Resources
+  panel(14, 14, 300, 92);
+  icon('wood', 36, 38, 1, true); shadowText(`Wood ${state.wood}`, 54, 38, 18, '#f0d8c0', 'left');
+  icon('folk', 160, 38, 1, true); shadowText(`Tribe ${state.followers}/${state.pop}`, 176, 38, 18, '#f0d8c0', 'left');
+  icon('mana', 36, 76, 1, true);
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(52, 66, 240, 20);
+  ctx.fillStyle = '#ff9a30'; ctx.fillRect(52, 66, 240 * state.mana / tune.manaMax, 20);
+  for (const k in SPELLS) { const x = 52 + 240 * tune[SPELLS[k].costK] / tune.manaMax; ctx.fillStyle = 'rgba(255,240,200,0.7)'; ctx.fillRect(x - 1, 63, 2, 26); }
+  shadowText(`Mana ${Math.floor(state.mana)}`, 172, 76, 16, '#fff', 'center');
+  // Rival and raid
+  panel(W - 250, 14, 236, 60);
+  icon('blue', W - 228, 36, 1, true); shadowText(`Blue huts left: ${state.rivalLeft}`, W - 210, 36, 18, '#c8dcff', 'left');
+  const tm = Math.floor(state.t / 60), ts = Math.floor(state.t % 60);
+  shadowText(`Time ${tm}:${String(ts).padStart(2, '0')}`, W - 210, 60, 16, '#d0c0e0', 'left');
+  const toRaid = state.nextRaid - state.t;
+  if (state.rivalLeft > 0) {
+    const warn = toRaid <= tune.raidWarn;
+    const raiding = units.some(u => !u.dead && u.role === 'raid');
+    const s = raiding ? 'Raiders on your land!  F: look' : warn ? `Raid in ${Math.ceil(toRaid)}s!  F: look` : `Next raid in ${Math.floor(toRaid / 60)}:${String(Math.floor(toRaid % 60)).padStart(2, '0')}`;
+    panel(W / 2 - 160, 14, 320, 36, raiding || warn ? 0.75 : 0.45);
+    shadowText(s, W / 2, 32, 18, raiding || warn ? (Math.sin(state.t * 8) > 0 ? '#ff6a50' : '#ffd0a0') : '#e0d0f0');
+  }
+  // Off-screen alert arrow
+  if (state.alert) {
+    const p = toScreen(state.alert, 0.3);
+    const on = p.facing && p.x > 40 && p.x < W - 40 && p.y > 60 && p.y < H - 110;
+    if (on) {
+      ctx.strokeStyle = '#ff5a40'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(p.x, p.y, 18 + Math.sin(state.t * 8) * 4, 0, 6.3); ctx.stroke();
+    } else {
+      let vx = p.facing ? p.x - W / 2 : p.wx, vy = p.facing ? p.y - H / 2 : -p.wy;
+      const l = Math.hypot(vx, vy) || 1; vx /= l; vy /= l;
+      const k = Math.min((W / 2 - 50) / Math.abs(vx || 1e-6), (H / 2 - 90) / Math.abs(vy || 1e-6));
+      const ax = W / 2 + vx * k, ay = H / 2 + vy * k;
+      ctx.save(); ctx.translate(ax, ay); ctx.rotate(Math.atan2(vy, vx));
+      ctx.fillStyle = Math.sin(state.t * 8) > 0 ? '#ff5a40' : '#ffb090';
+      ctx.beginPath(); ctx.moveTo(18, 0); ctx.lineTo(-10, -12); ctx.lineTo(-4, 0); ctx.lineTo(-10, 12); ctx.closePath(); ctx.fill(); ctx.restore();
+    }
+  }
+  // Health bars over hurt things that face us
+  const bar = (e, h, isHut) => {
+    if (e.dead || e.hp >= e.maxHp) return;
+    const p = toScreen(e.dir, h + (isHut ? 1.6 : 1.1)); if (!p.facing) return;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(p.x - 16, p.y - 3, 32, 5);
+    ctx.fillStyle = e.team === 0 ? '#ffa040' : '#6aa0ff'; ctx.fillRect(p.x - 16, p.y - 3, 32 * Math.max(0, e.hp / e.maxHp), 5);
+  };
+  for (const u of units) bar(u, u.h, false);
+  for (const h of huts) if (h.done) bar(h, h.h, true);
+  // Action bar: totems and spells
+  const slots = [['1', 'gather', 'Gather', ''], ['2', 'build', 'Build', ''], ['3', 'war', 'War', ''],
+    ['Q', 'ember', 'Ember', 'ember'], ['W', 'raise', 'Raise', 'raise'], ['E', 'fissure', 'Fissure', 'fissure']];
+  const bw = 86, bh = 70, gap = 8, total = slots.length * bw + (slots.length - 1) * gap + 22;
+  let x = W / 2 - total / 2;
+  slots.forEach(([key, ic, name, sp], i) => {
+    if (i === 3) x += 22;
+    const cost = sp ? tune[SPELLS[sp].costK] : 0, can = !sp || state.mana >= cost, armed = sp && (state.spell === sp || (state.cast && state.cast.spell === sp));
+    panel(x, H - bh - 14, bw, bh, armed ? 0.85 : 0.6);
+    if (armed) { ctx.strokeStyle = '#ffd080'; ctx.lineWidth = 3; ctx.beginPath(); ctx.roundRect(x, H - bh - 14, bw, bh, 8); ctx.stroke(); }
+    icon(ic, x + bw / 2, H - bh + 12, 1.1, can);
+    shadowText(key, x + 12, H - bh - 1, 15, '#ffe0b0', 'center');
+    shadowText(sp ? `${name} ${cost}` : name, x + bw / 2, H - 30, 15, can ? '#f0e0d0' : '#8a7a80');
+    x += bw + gap;
+  });
+  // Messages, hints, shaman
+  if (shaman.dead) shadowText(`Your shaman is reborn at the hearth in ${Math.ceil(state.shamanT)}s`, W / 2, 120, 22, '#ffb080');
+  else if (state.cast) shadowText(`Casting ${SPELLS[state.cast.spell].name} when in range… click elsewhere to cancel`, W / 2, H - 112, 16, '#ffd8a0');
+  else if (state.spell) shadowText(`${SPELLS[state.spell].name}: click where to cast · ${SPELLS[state.spell].key.slice(3)} again to put it away`, W / 2, H - 112, 16, '#ffd8a0');
+  if (state.msgT > 0) shadowText(state.msg, W / 2, 84, 20, '#fff0d0');
+  if (state.hint < HINTS.length) {
+    ctx.font = `17px ${FONT}`; const tw = ctx.measureText(HINTS[state.hint]).width;
+    panel(W / 2 - tw / 2 - 16, H - 160, tw + 32, 32, 0.7);
+    shadowText(HINTS[state.hint], W / 2, H - 144, 17, '#ffe8b0');
+  }
+}
+
+// ---- Figures scene: every unit and prop, named --------------------------------------------
+const figWorld = new THREE.Scene(); figWorld.background = new THREE.Color(0x150c26);
+figWorld.add(new THREE.HemisphereLight(0x9a7ae0, 0x2a1420, 1.3));
+const figSun = new THREE.DirectionalLight(0xffd2a0, 2.4); figSun.position.set(-3, 5, 6); figWorld.add(figSun);
+const figCam = new THREE.PerspectiveCamera(30, W / H, 0.1, 100);
+figCam.position.set(0, 2.4, 9.5); figCam.lookAt(0, 0.6, 0);
+const FIGS = [['Shaman', makeShaman], ['Follower', makeFollower], ['Follower with wood', () => { const g = makeFollower(); g.userData.log.visible = true; return g; }],
+  ['Blue warrior', makeWarrior], ['Your hut', () => makeHut(0)], ['Blue hut', () => makeHut(1)], ['Gather totem', () => makeTotem('gather')],
+  ['Build totem', () => makeTotem('build')], ['War totem', () => makeTotem('war')], ['Ash pine', makeTree], ['Hearth', makeHearth]];
+const figPos = [];
+FIGS.forEach(([name, mk], i) => {
+  const g = mk(); const row = i < 6 ? 0 : 1, col = row ? i - 6 : i, n = row ? 5 : 6;
+  g.position.set((col - (n - 1) / 2) * 1.5, row ? -0.9 : 1.3, row ? 0.5 : 0);
+  g.scale.multiplyScalar(1.2); g.rotation.y = -0.5; figWorld.add(g); figPos.push([name, g.position.clone()]);
+});
+const figGround = new THREE.Mesh(new THREE.BoxGeometry(11, 0.1, 5), M(0x3b3037)); figGround.position.set(0, -1.0, 0); figWorld.add(figGround);
+const figGround2 = new THREE.Mesh(new THREE.BoxGeometry(11, 0.1, 1.6), M(0x4f3f46)); figGround2.position.set(0, 1.2, 0); figWorld.add(figGround2);
+
+const scenes = {
+  figures: {
+    update(dt) { state.t += dt; },
+    draw() {
+      renderer.render(figWorld, figCam); ctx.clearRect(0, 0, W, H);
+      for (const [name, p] of figPos) {
+        const s = p.clone().add(V(0, -0.2, 0)).project(figCam);
+        shadowText(name, (s.x + 1) / 2 * W, (1 - s.y) / 2 * H + 18, 16, '#ffe0c0');
+      }
+      shadowText('Ember Moon: figures', W / 2, 30, 24, '#fff');
+    },
+  },
+  title: {
+    update(dt) {
+      state.t += dt; spin(0.06 * dt, 0);
+      if (pressed('Enter') || pressed('Space')) { reset(); scene = 'play'; }
+    },
+    draw() {
+      drawMoon(); ctx.clearRect(0, 0, W, H);
+      const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, 'rgba(10,4,20,0.75)'); g.addColorStop(0.6, 'rgba(10,4,20,0.35)'); g.addColorStop(1, 'rgba(10,4,20,0.8)');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      shadowText(TITLE, W / 2, 130, 76, '#ffb060');
+      shadowText('Spin the moon. Plant totems. Crack the crust.', W / 2, 190, 22, '#f0d8c0');
+      panel(W / 2 - 330, 240, 660, 230, 0.6);
+      CONTROLS.forEach((c, i) => shadowText(c, W / 2, 275 + i * 40, 19, '#f0e0d0'));
+      shadowText('Swallow every blue hut into the crust. If your whole tribe falls, the moon is lost.', W / 2, 520, 18, '#ffd0a0');
+      shadowText('Enter to start', W / 2, H - 80, 28, Math.sin(state.t * 3) > -0.3 ? '#fff' : '#ffb060');
+    },
+  },
+  play: {
+    update(dt) {
+      if (pressed('KeyP') || pressed('Escape')) { scene = 'pause'; return; }
+      updPlay(dt);
+    },
+    draw() { drawMoon(); drawHud(); },
+  },
+  pause: {
+    update() { if (pressed('KeyP') || pressed('Escape')) scene = 'play'; },
+    draw() { scenes.play.draw(); ctx.fillStyle = 'rgba(10,4,20,0.5)'; ctx.fillRect(0, 0, W, H); shadowText('Paused', W / 2, H / 2, 48, '#fff'); shadowText('P to carry on', W / 2, H / 2 + 50, 22, '#e0d0f0'); },
+  },
+  over: {
+    update() { if (pressed('KeyR') || pressed('Enter')) { reset(); scene = 'play'; } },
+    draw() {
+      scenes.play.draw(); ctx.fillStyle = 'rgba(10,4,20,0.6)'; ctx.fillRect(0, 0, W, H);
+      shadowText(state.gained || 'Game over', W / 2, H / 2 - 40, 38, '#ffb080');
+      shadowText(`Blue huts swallowed ${state.swallowed}, burned ${state.burned} · raids weathered ${state.raidN}`, W / 2, H / 2 + 10, 20, '#e0d0f0');
+      shadowText('R to restart the moon', W / 2, H / 2 + 56, 26, '#fff');
+    },
+  },
+  results: {
+    update() { if (pressed('Enter')) { reset(); scene = 'play'; } },
+    draw() {
+      scenes.play.draw(); ctx.fillStyle = 'rgba(10,4,20,0.55)'; ctx.fillRect(0, 0, W, H);
+      shadowText('The ember moon is yours', W / 2, H / 2 - 80, 48, '#ffb060');
+      shadowText(state.gained, W / 2, H / 2 - 24, 24, '#f0e0d0');
+      shadowText(`Score ${state.score}: Enter to play again`, W / 2, H / 2 + 30, 26, '#fff');
+    },
+  },
+};
+
+// ---- Loop: fixed step, frame time clamped ---------------------------------------------
+function step() {
+  if (pressed('KeyM')) { setMuted(!muted); hit.delete('KeyM'); }
+  scenes[scene].update(STEP); hit.clear();
+}
+let last, acc = 0, ALPHA = 1; // ALPHA: how far the frame is between the last two steps
+function tick() {
+  const now = clock.now();
+  acc += Math.min(now - last, 0.25); last = now; // a stall never fast-forwards the game
+  while (acc >= STEP) { step(); acc -= STEP; }
+  ALPHA = acc / STEP; // draw between steps, so the view never judders
+  drawFrame();
+}
+function drawFrame() { scenes[scene].draw(); }
+function frame() { tick(); requestAnimationFrame(frame); }
+// A headless browser on a time budget runs timers but almost no animation frames: a timer
+// ticks when no frame has come for 100 ms on a visible page; a hidden tab stays paused.
+function timer() { if (document.visibilityState === 'visible' && clock.now() - last > 0.1) tick(); }
+
+// ---- What a check can read and drive (?manual=1 stops the loop; players never see it) ----
+window.game = {
+  get scene() { return scene; },
+  get state() { return state; },
+  press(code) { hit.add(code); },
+  hold(code, on) { on ? down.add(code) : down.delete(code); },
+  get events() { return events; }, // the loop steps; a check empties it
+  step(n = 1, draw = true, alpha = 1) {
+    for (let i = 0; i < n; i++) step();
+    if (draw) { ALPHA = alpha; drawFrame(); }
+  },
+};
+
+reset();
+scene = params.get('scene') || 'title';
+last = clock.now();
+if (params.get('manual') === '1') drawFrame();
+else { requestAnimationFrame(frame); setInterval(timer, 50); }
+</script>
+</body>
+</html>

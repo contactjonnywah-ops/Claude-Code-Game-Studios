@@ -1,0 +1,61 @@
+time	2026-11-14 23:00:31
+keep	lines	0	pinned	0
+checklist	L1	unlisted	-	Look: small low-poly moon of dark basalt; glowing ember cracks pulse along fault lines; dusk violet sky with a big gas-giant on the horizon. Your followers warm orange robed figures with a staff, rivals cold blue. Totems are carved poles topped with a glowing glyph. Signature detail: an opened fissure glows molten and slowly cools shut. Every figure drawn, no emoji, no plain circles. *(provisional)*	
+checklist	L2	unlisted	-	References: Populous: The Beginning (weak respawning shaman, mana from followers, terrain spells, rotatable world), mechanics only. *(you said)*	
+checklist	L3	unlisted	-	View: 3D · Camera: orbit around the globe, drag-rotate, zoom. *(provisional)*	
+checklist	F1	unlisted	-	spinnable low-poly moon with land, sea and deformable height	
+checklist	F2	unlisted	-	totems: Gather / Build / War; followers obey the nearest	
+checklist	F3	unlisted	-	wood + mana economy: huts spawn followers, working followers make mana	
+checklist	F4	unlisted	-	shaman: weak, respawns at the hearth, only caster	
+checklist	F5	unlisted	-	3 spells with range and mana cost: Fissure, Raise, Ember	
+checklist	F6	unlisted	-	rival tribe camp sending bigger timed raids with a warning	
+checklist	F7	unlisted	-	win / lose screens and restart	
+checklist	M1	unlisted	-	Moon spins into view; 6 followers by a hearth, shaman beside them.	
+checklist	M2	unlisted	-	A glowing hint: "Press 1 on the trees".	
+checklist	M3	unlisted	-	You plant a Gather totem; followers walk off and haul wood.	
+checklist	M4	unlisted	-	Press 2: a Build totem; a hut rises from the wood.	
+checklist	M5	unlisted	-	Mana bar fills as followers work.	
+checklist	M6	unlisted	-	Spin the moon: the rival camp appears over the horizon.	
+checklist	M7	unlisted	-	Walk the shaman to the land's edge, W: Raise lifts a land bridge toward them.	
+checklist	M8	unlisted	-	*(guessed)*	
+checklist	C1	unlisted	-	First rival raid around minute 3: 3 blue warriors over the land bridge or the shallows, warned 15 s ahead with a red ping and an alert.	
+checklist	C2	unlisted	-	Each raid bigger.	
+checklist	C3	unlisted	-	Fissure costs a lot of mana and has short range, so the shaman must walk into danger to cast it; if she dies she respawns at the hearth after 10 s.	
+checklist	C4	unlisted	-	Losing every follower loses; a loss restarts the moon.	
+checklist	C5	unlisted	-	*(provisional)*	
+webgl	ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)
+browser	HeadlessChrome/153.0.0.0
+console	play	2066	[.WebGL-0x23b4001d3000]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels
+scene	play	0	title
+scene	play	1	play
+digits	log	19px "Trebuchet MS", "Segoe UI", sans-serif	proportional	4.546
+digits	log	18px "Trebuchet MS", "Segoe UI", sans-serif	proportional	4.307
+digits	log	16px "Trebuchet MS", "Segoe UI", sans-serif	proportional	3.828
+digits	log	15px "Trebuchet MS", "Segoe UI", sans-serif	proportional	3.589
+measure	step-time	play	0.217	14.700	228
+lane	play	stop	3.8	893
+console	play	0	[.WebGL-0x23b4001d3000]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels
+console	play	0	[.WebGL-0x23b4001d3000]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)
+uncaught	play	0
+text	play	canvas	172,25,224,37	27.0	14.21	inside	Wood 0
+text	play	canvas	270,25,332,38	27.0	14.21	inside	Tribe 6/6
+text	play	canvas	240,57,293,67	24.0	20.32	inside	Mana 36
+text	play	canvas	987,24,1091,36	27.0	14.06	inside	Blue huts left: 5
+text	play	canvas	986,43,1047,54	24.0	11.43	inside	Time 0:03
+text	play	canvas	586,20,698,32	27.0	13.39	inside	Next raid in 2:56
+text	play	canvas	416,517,423,525	22.5	15.31	inside	1
+text	play	canvas	425,549,464,559	22.5	15.06	inside	Gather
+text	play	canvas	492,516,498,525	22.5	15.31	inside	2
+text	play	canvas	506,549,534,559	22.5	15.06	inside	Build
+text	play	canvas	566,516,573,526	22.5	15.31	inside	3
+text	play	canvas	584,549,607,559	22.5	15.06	inside	War
+text	play	canvas	659,516,667,527	22.5	15.31	inside	Q
+text	play	canvas	661,549,715,559	22.5	15.06	inside	Ember 10
+text	play	canvas	733,517,745,525	22.5	15.15	inside	W
+text	play	canvas	739,549,787,559	22.5	14.90	inside	Raise 25
+text	play	canvas	811,517,817,525	22.5	15.31	inside	E
+text	play	canvas	809,549,868,559	22.5	4.79	inside	Fissure 50
+text	play	canvas	494,482,790,496	24.0	14.63	inside	Raise: click where to cast · W again to put it away
+text	play	canvas	378,457,906,471	25.5	16.08	inside	Drag or use the arrow keys to spin the moon. The blue camp l
+screen	play	drawn
+responds	changed	4
