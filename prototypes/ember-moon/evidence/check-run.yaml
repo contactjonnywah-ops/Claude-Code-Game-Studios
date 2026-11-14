@@ -1,0 +1,124 @@
+# The one-shot's small check (check-run/1).
+# Written by one-shot-check.sh --record: the results are /prototype's reading of
+# evidence/self-check.tsv; never edited by hand.
+kind: check-run/1
+engine: web
+browser: "HeadlessChrome/153.0.0.0"
+time: "2026-11-14 23:08:33"
+checks:
+  - id: boots
+    result: pass
+    evidence:
+      - "evidence/self-check.tsv"
+  - id: shot
+    result: not_run
+    mark: not assessed
+    why: "the check's own play shot never landed in two runs (SwiftShader 3D, 7 min each); play.png was taken with page-shot instead and looked at"
+    evidence:
+  - id: outlines
+    result: pass
+    evidence:
+      - "evidence/figures.png"
+  - id: brief-words
+    result: pass
+    evidence:
+      - "evidence/brief-words.tsv"
+  - id: emoji
+    result: pass
+    evidence:
+      - "evidence/self-check.tsv"
+  - id: nearest-game
+    result: pass
+    evidence:
+      - "evidence/nearest-game.txt"
+brief_checklist:
+  - id: L1
+    result: pass
+    evidence: "evidence/play.png"
+    item: "Look: small low-poly moon of dark basalt; glowing ember cracks pulse along fault lines; dusk violet sky with a big gas-giant on the horizon. Your followers warm orange robed figures with a staff, rivals cold blue. Totems are carved poles topped with a glowing glyph. Signature detail: an opened fissure glows molten and slowly cools shut. Every figure drawn, no emoji, no plain circles. *(provisional)*"
+  - id: L2
+    result: pass
+    evidence: "index.html:783"
+    item: "References: Populous: The Beginning (weak respawning shaman, mana from followers, terrain spells, rotatable world), mechanics only. *(you said)*"
+  - id: L3
+    result: pass
+    evidence: "evidence/play.png"
+    item: "View: 3D · Camera: orbit around the globe, drag-rotate, zoom. *(provisional)*"
+  - id: F1
+    result: pass
+    evidence: "index.html:313"
+    item: "spinnable low-poly moon with land, sea and deformable height"
+  - id: F2
+    result: pass
+    evidence: "index.html:773"
+    item: "totems: Gather / Build / War; followers obey the nearest"
+  - id: F3
+    result: pass
+    evidence: "index.html:966"
+    item: "wood + mana economy: huts spawn followers, working followers make mana"
+  - id: F4
+    result: pass
+    evidence: "index.html:976"
+    item: "shaman: weak, respawns at the hearth, only caster"
+  - id: F5
+    result: pass
+    evidence: "index.html:801"
+    item: "3 spells with range and mana cost: Fissure, Raise, Ember"
+  - id: F6
+    result: pass
+    evidence: "index.html:882"
+    item: "rival tribe camp sending bigger timed raids with a warning"
+  - id: F7
+    result: pass
+    evidence: "index.html:1271"
+    item: "win / lose screens and restart"
+  - id: M1
+    result: pass
+    evidence: "evidence/figures.png"
+    item: "Moon spins into view; 6 followers by a hearth, shaman beside them."
+  - id: M2
+    result: pass
+    evidence: "evidence/play.png"
+    item: "A glowing hint: \"Press 1 on the trees\"."
+  - id: M3
+    result: pass
+    evidence: "index.html:733"
+    item: "You plant a Gather totem; followers walk off and haul wood."
+  - id: M4
+    result: pass
+    evidence: "index.html:748"
+    item: "Press 2: a Build totem; a hut rises from the wood."
+  - id: M5
+    result: pass
+    evidence: "index.html:966"
+    item: "Mana bar fills as followers work."
+  - id: M6
+    result: pass
+    evidence: "evidence/dev-play.png"
+    item: "Spin the moon: the rival camp appears over the horizon."
+  - id: M7
+    result: pass
+    evidence: "index.html:927"
+    item: "Walk the shaman to the land's edge, W: Raise lifts a land bridge toward them *(guessed)*."
+  - id: C1
+    result: pass
+    evidence: "index.html:1155"
+    item: "First rival raid around minute 3: 3 blue warriors over the land bridge or the shallows, warned 15 s ahead with a red ping and an alert."
+  - id: C2
+    result: pass
+    evidence: "index.html:896"
+    item: "Each raid bigger."
+  - id: C3
+    result: pass
+    evidence: "index.html:798"
+    item: "Fissure costs a lot of mana and has short range, so the shaman must walk into danger to cast it; if she dies she respawns at the hearth after 10 s."
+  - id: C4
+    result: pass
+    evidence: "index.html:1012"
+    item: "Losing every follower loses; a loss restarts the moon *(provisional)*."
+measures:
+  - id: step-time
+    value: 14.200
+    unit: ms
+    by: browser
+    detail: "mean 0.175 ms, slowest 14.200 ms, 224 steps"

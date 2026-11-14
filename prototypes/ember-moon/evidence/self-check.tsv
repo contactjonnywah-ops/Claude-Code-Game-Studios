@@ -1,4 +1,4 @@
-time	2026-11-14 23:00:31
+time	2026-11-14 23:08:33
 keep	lines	0	pinned	0
 checklist	L1	unlisted	-	Look: small low-poly moon of dark basalt; glowing ember cracks pulse along fault lines; dusk violet sky with a big gas-giant on the horizon. Your followers warm orange robed figures with a staff, rivals cold blue. Totems are carved poles topped with a glowing glyph. Signature detail: an opened fissure glows molten and slowly cools shut. Every figure drawn, no emoji, no plain circles. *(provisional)*	
 checklist	L2	unlisted	-	References: Populous: The Beginning (weak respawning shaman, mana from followers, terrain spells, rotatable world), mechanics only. *(you said)*	
@@ -25,17 +25,17 @@ checklist	C4	unlisted	-	Losing every follower loses; a loss restarts the moon.
 checklist	C5	unlisted	-	*(provisional)*	
 webgl	ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)
 browser	HeadlessChrome/153.0.0.0
-console	play	2066	[.WebGL-0x23b4001d3000]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels
+console	play	2066	[.WebGL-0x354c001cb000]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels
 scene	play	0	title
 scene	play	1	play
 digits	log	19px "Trebuchet MS", "Segoe UI", sans-serif	proportional	4.546
 digits	log	18px "Trebuchet MS", "Segoe UI", sans-serif	proportional	4.307
 digits	log	16px "Trebuchet MS", "Segoe UI", sans-serif	proportional	3.828
 digits	log	15px "Trebuchet MS", "Segoe UI", sans-serif	proportional	3.589
-measure	step-time	play	0.217	14.700	228
-lane	play	stop	3.8	893
-console	play	0	[.WebGL-0x23b4001d3000]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels
-console	play	0	[.WebGL-0x23b4001d3000]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)
+measure	step-time	play	0.175	14.200	224
+lane	play	stop	3.7	788
+console	play	0	[.WebGL-0x354c001cb000]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels
+console	play	0	[.WebGL-0x354c001cb000]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)
 uncaught	play	0
 text	play	canvas	172,25,224,37	27.0	14.21	inside	Wood 0
 text	play	canvas	270,25,332,38	27.0	14.21	inside	Tribe 6/6
@@ -51,11 +51,10 @@ text	play	canvas	566,516,573,526	22.5	15.31	inside	3
 text	play	canvas	584,549,607,559	22.5	15.06	inside	War
 text	play	canvas	659,516,667,527	22.5	15.31	inside	Q
 text	play	canvas	661,549,715,559	22.5	15.06	inside	Ember 10
-text	play	canvas	733,517,745,525	22.5	15.15	inside	W
-text	play	canvas	739,549,787,559	22.5	14.90	inside	Raise 25
+text	play	canvas	733,517,745,525	22.5	15.31	inside	W
+text	play	canvas	739,549,787,559	22.5	15.06	inside	Raise 25
 text	play	canvas	811,517,817,525	22.5	15.31	inside	E
 text	play	canvas	809,549,868,559	22.5	4.79	inside	Fissure 50
-text	play	canvas	494,482,790,496	24.0	14.63	inside	Raise: click where to cast · W again to put it away
 text	play	canvas	378,457,906,471	25.5	16.08	inside	Drag or use the arrow keys to spin the moon. The blue camp l
 screen	play	drawn
 responds	changed	4

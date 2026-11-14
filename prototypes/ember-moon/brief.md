@@ -38,13 +38,13 @@ First rival raid around minute 3: 3 blue warriors over the land bridge or the sh
 - Lose: every follower dead (shaman alone cannot save the tribe). *(provisional)*
 
 ## Features
-- [ ] spinnable low-poly moon with land, sea and deformable height
-- [ ] totems: Gather / Build / War; followers obey the nearest
-- [ ] wood + mana economy: huts spawn followers, working followers make mana
-- [ ] shaman: weak, respawns at the hearth, only caster
-- [ ] 3 spells with range and mana cost: Fissure, Raise, Ember
-- [ ] rival tribe camp sending bigger timed raids with a warning
-- [ ] win / lose screens and restart
+- [x] spinnable low-poly moon with land, sea and deformable height
+- [x] totems: Gather / Build / War; followers obey the nearest
+- [x] wood + mana economy: huts spawn followers, working followers make mana
+- [x] shaman: weak, respawns at the hearth, only caster
+- [x] 3 spells with range and mana cost: Fissure, Raise, Ember
+- [x] rival tribe camp sending bigger timed raids with a warning
+- [x] win / lose screens and restart
 
 ## Keep
 -
