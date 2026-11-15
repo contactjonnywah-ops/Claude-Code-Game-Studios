@@ -32,6 +32,8 @@ After play: 1. in a sense - but with flavour. This uses a different setting on t
 
 After play: My machine is too low spec to test this prototype. Provide me access to your virtual machine so I can test.
 
+After play: The beam runs smoothly as expected.
+
 **Pitch:** Trapped in a test facility, you shoot a wall to make it the floor, and everything loose falls with you.
 
 **Genre:** first-person 3D puzzle platformer
@@ -87,7 +89,7 @@ The first real think is room two, about a minute in: the next dark panel is far 
 - real physics · in the slice
 
 ## Keep
--
+- The beam runs smoothly as expected *(you said)* · pins: traction_lock_time 0.8, traction_hold 3, traction_range 10, traction_pull 10, traction_break 2.5, traction_snag_time 0.5
 
 ## Avoid
 - Portal's name, portals, characters, art and UI *(guessed)*
