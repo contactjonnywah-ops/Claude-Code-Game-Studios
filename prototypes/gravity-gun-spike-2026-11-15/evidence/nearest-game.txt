@@ -1,0 +1,1 @@
+Nearest game: Portal (a first-person test-chamber puzzle played with a gun); this one differs in the gun: it opens no portals, it re-aims gravity, so the surface shot becomes the ground for the player and every loose object.

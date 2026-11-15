@@ -1,0 +1,17 @@
+time	2026-11-15 13:28:33
+not_assessed	keep	no brief.md
+webgl	ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)
+browser	HeadlessChrome/153.0.0.0
+console	play	1142	[.WebGL-0x39ac001c1e00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels
+scene	play	0	title
+scene	play	1	play
+digits	log	22px "Trebuchet MS", "Segoe UI", sans-serif	proportional	5.264
+measure	step-time	play	0.055	4.000	358
+lane	play	stop	6.0	744
+console	play	0	[.WebGL-0x39ac001c1e00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels
+console	play	0	[.WebGL-0x39ac001c1e00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)
+uncaught	play	0
+text	play	canvas	147,16,220,30	31.5	21.00	inside	Deaths 0
+text	play	canvas	351,547,929,563	30.0	21.00	inside	WASD move · Space jump · Click or F: make that surface the g
+screen	play	drawn
+responds	changed	4
