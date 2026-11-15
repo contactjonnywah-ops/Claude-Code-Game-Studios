@@ -26,6 +26,7 @@ addEventListener('error', e => document.body.insertAdjacentHTML('beforeend',
 <canvas id="gl"></canvas>
 <canvas id="game"></canvas>
 <script src="vendor/three.js"></script>
+<script src="vendor/cannon.js"></script>
 <script src="config.js"></script>
 <script>
 'use strict';
@@ -41,7 +42,7 @@ const W = 1280, H = 720;        // logical size; a pixel look lowers it and sets
 const PIXEL = false;            // pixel looks: whole-number scale, no smoothing
 const FONT = '"Trebuchet MS", "Segoe UI", sans-serif';      // the brief's look picks the type
 const TITLE = 'Groundshift';
-const CONTROLS = ['WASD: move    Space: jump', 'Mouse or arrows: look', 'Click or F: fire the gravity gun', 'Only dark panels can be shot: the one you hit becomes the ground', 'Reach the green exit door', 'R: restart room    P: pause    M: mute']; // shown on the title screen
+const CONTROLS = ['WASD: move    Space: jump    Mouse or arrows: look', 'Q: switch the gun between GRAVITY and TRACTION', 'GRAVITY: click or F on a dark panel makes it the ground', 'TRACTION: hold click or F on the cube to lock and carry it', 'Reach the green exit door', 'R: restart room    P: pause    M: mute']; // shown on the title screen
 const clock = window.GAME_CLOCK || { now: () => performance.now() / 1000 }; // a check may inject one
 const CHEAP = params.get('render') === 'cheap'; // a headless shot or check: 3D draws cheap; players never see it
 let seed;
@@ -87,7 +88,8 @@ addEventListener('keydown', e => {
 });
 addEventListener('keyup', e => down.delete(e.code));
 let mdx = 0, mdy = 0; // mouse look, read on the step
-addEventListener('pointerdown', () => { startAudio(); hit.add('Mouse0'); canvas.requestPointerLock()?.catch?.(() => {}); });
+addEventListener('pointerdown', () => { startAudio(); hit.add('Mouse0'); down.add('Mouse0'); canvas.requestPointerLock()?.catch?.(() => {}); });
+addEventListener('pointerup', () => down.delete('Mouse0'));
 addEventListener('mousemove', e => { if (document.pointerLockElement) { mdx += e.movementX; mdy += e.movementY; } });
 // Escape frees the mouse without a keydown: pause then, and a click comes back.
 document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement && scene === 'play') scene = 'pause'; });
@@ -114,13 +116,12 @@ function tone(freq, dur, type = 'square', vol = 0.3) {
 }
 
 // ---- The game: three rooms; the dark panel you shoot becomes the ground -----------------
-// shortcut: every surface is axis-aligned and bodies are boxes that never rotate, so gravity
-// is one of six directions; upgrade to a physics library when ramps or tumbling objects matter.
-const AXES = ['x', 'y', 'z'];
+// Physics is cannon-es (vendor/cannon.js): the cube tumbles, surfaces may be angled, and gravity
+// may point any way. The player is a sphere that never rotates, steered by its velocity.
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
-const B = (x0, x1, y0, y1, z0, z1) => ({ // a box from its corners: centre c, half size h
-  c: V((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2), h: V((x1 - x0) / 2, (y1 - y0) / 2, (z1 - z0) / 2) });
-const overlap = (p, q) => AXES.every(k => Math.abs(p.c[k] - q.c[k]) < p.h[k] + q.h[k] - 1e-6);
+const B = (x0, x1, y0, y1, z0, z1, rot = 0) => ({ // a box from its corners: centre c, half size h, turned rot about z
+  c: V((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2), h: V((x1 - x0) / 2, (y1 - y0) / 2, (z1 - z0) / 2), rot });
+const inside = (p, b) => ['x', 'y', 'z'].every(k => Math.abs(p[k] - b.c[k]) < b.h[k]);
 
 // The rooms run along +z (metres). Room 1: z -14..-2. Room 2, a tall shaft: z -1..11.
 // Room 3, on the upper floor (y 16): z 12..26. Partitions between them have one doorway each.
@@ -138,111 +139,139 @@ const walls = [
   // Partition 3, the exit doorway
   B(-7, -3.2, 16, 25, 26, 27), B(-0.8, 7, 16, 25, 26, 27), B(-3.2, -0.8, 18.6, 25, 26, 27),
 ];
+const RAMP = -0.45; // rad the ramp in room 3 leans: it rises toward the -x wall
 const blocks = [
-  B(-6, 6, 0, 6, -8.5, -7.5),   // room 1: a wall too high to climb
-  B(2, 6, 15.5, 16, -1, 11),    // room 2: the high ledge with the way on
-  B(3, 6, 16, 19, 23, 26),      // room 3: the pillar the plate sits on
+  B(-6, 6, 0, 6, -8.5, -7.5),              // room 1: a wall too high to climb
+  B(2, 6, 15.5, 16, -1, 11),               // room 2: the high ledge with the way on
+  B(-5.3, -1.7, 15.95, 16.45, 16, 19, RAMP), // room 3: a ramp, to test angled ground
 ];
+// Room 3: a glass tube, open at the top, with the plate at its bottom. Too tall for the beam to
+// reach over from the floor: the cube has to be dropped in from the ceiling.
+const tube = [B(2.5, 3, 16, 22, 21.5, 24.5), B(5, 5.5, 16, 22, 21.5, 24.5), B(3, 5, 16, 22, 21.5, 22), B(3, 5, 16, 22, 24, 24.5)];
 const endGlow = B(-3.2, -0.8, 16, 18.6, 27, 28);       // the light behind the exit
 const door = B(-3.2, -0.8, 16, 18.6, 26.2, 26.8);      // the exit door; the plate lifts it away
-const PLATE = B(3, 6, 19, 20, 23, 26);                 // what rests in here presses the plate
-const DOOR_Y = door.c.y, WIN_Z = 26.1;
+const PLATE = B(3, 5, 16, 17.4, 22, 24);               // what rests in here presses the plate
+const DOOR_Y = door.c.y, WIN_Z = 26.1, RADIUS = 0.6;
 // Dark panels: the only surfaces the gun grips. Drawn and aimed at, never collided with.
+const rampPanel = B(-5.1, -1.9, 16.19, 16.21, 16.2, 18.8, RAMP);
+rampPanel.c.set(-3.5 - Math.sin(RAMP) * 0.27, 16.2 + Math.cos(RAMP) * 0.27, 17.5); // on the ramp's upper face
 const panels = [
   B(-4, 4, 8.98, 9, -13.5, -9.5), B(-4, 4, 0, 0.02, -13.5, -9.5), B(-4, 4, 0, 0.02, -6.5, -3),          // room 1
   B(-6, -5.98, 1, 21, 1, 9), B(-5, 5, 21.98, 22, 0, 10), B(2.2, 5.8, 16, 16.02, 0, 10), B(-5, 1.5, 0, 0.02, 0, 10), // room 2
-  B(-5, 2.8, 24.98, 25, 13, 25), B(-5, 2.5, 16, 16.02, 13, 25),                                          // room 3
+  B(-5, 2.8, 24.98, 25, 13, 25), B(-1.5, 2.3, 16, 16.02, 13, 25), rampPanel,                             // room 3
 ];
-panels.forEach(p => { p.dark = true; });
-const statics = walls.concat(blocks, endGlow, door), rayTargets = statics.concat(panels);
-const CUBE_START = [-2, 16.5, 16];
-const cube = { ...B(-2.5, -1.5, 16, 17, 15.5, 16.5), v: V(0, 0, 0) };
+const statics = walls.concat(blocks, tube, endGlow, door);
+const CUBE_START = [0.5, 16.5, 15];
 const ROOMS = [ // where each room starts you, and the z past which you are in it
   { start: [0, 0.6, -12.5], from: -Infinity }, { start: [0, 0.6, 0.5], from: -1 }, { start: [4, 16.6, 13.5], from: 12 },
 ];
-const player = { ...B(-0.6, 0.6, 0, 1.2, -0.6, 0.6), v: V(0, 0, 0), grounded: false, prev: V(0, 0, 0) };
 const EYE = 0.45; // metres above the player's centre, along up
-// The cube cannot enter room 3's doorways: pushed in there, nobody could get behind it to push it out.
-const cubeStops = [B(2.8, 5.2, 16, 18.6, 11, 12), B(-3.2, -0.8, 16, 18.6, 26, 27)];
-const solids = statics.concat(cube), cubeSolids = solids.concat(player, cubeStops);
 
-// Move a body one step, an axis at a time; a hit puts it flush against what it hit.
-function moveBody(b, others, onHit) {
-  for (const a of AXES) {
-    const v = b.v[a]; if (!v) continue;
-    b.c[a] += v * STEP;
-    for (const o of others) {
-      if (o === b || !overlap(b, o)) continue;
-      b.c[a] = o.c[a] - Math.sign(v) * (o.h[a] + b.h[a]);
-      b.v[a] = 0; onHit(a, v, o);
-    }
-  }
+// The physics world. Groups: 1 solid things, 2 dark panels (rays only), 8 the player.
+const phys = new CANNON.World();
+phys.allowSleep = false; phys.solver.iterations = 12;
+const solidMat = new CANNON.Material('solid'), playerMat = new CANNON.Material('player');
+const solidContact = new CANNON.ContactMaterial(solidMat, solidMat, { friction: tune.friction, restitution: tune.bounce });
+phys.addContactMaterial(solidContact);
+phys.addContactMaterial(new CANNON.ContactMaterial(playerMat, solidMat, { friction: 0, restitution: 0 }));
+function addBody(b, shape, opts) {
+  b.body = new CANNON.Body({ mass: 0, material: solidMat, shape, position: new CANNON.Vec3(b.c.x, b.c.y, b.c.z), collisionFilterGroup: 1, ...opts });
+  if (b.rot) b.body.quaternion.setFromEuler(0, 0, b.rot);
+  phys.addBody(b.body); return b;
 }
-// The nearest surface along a ray: { t, a: the face's axis, p: the point, s: what was hit }.
-function raycast(o, d) {
-  let best = null;
-  for (const s of rayTargets) {
-    let t0 = 0, t1 = Infinity, axis = null;
-    for (const a of AXES) {
-      if (Math.abs(d[a]) < 1e-9) { if (Math.abs(o[a] - s.c[a]) > s.h[a]) { t0 = Infinity; break; } continue; }
-      let n = (s.c[a] - s.h[a] - o[a]) / d[a], f = (s.c[a] + s.h[a] - o[a]) / d[a];
-      if (n > f) [n, f] = [f, n];
-      if (n > t0) { t0 = n; axis = a; }
-      t1 = Math.min(t1, f);
-    }
-    if (axis && t0 <= t1 && (!best || t0 < best.t)) best = { t: t0, a: axis, s };
-  }
-  if (best) best.p = o.clone().addScaledVector(d, best.t);
-  return best;
+const boxShape = b => new CANNON.Box(new CANNON.Vec3(b.h.x, b.h.y, b.h.z));
+statics.forEach(b => addBody(b, boxShape(b)));
+panels.forEach(b => { addBody(b, boxShape(b), { collisionFilterGroup: 2, collisionFilterMask: 4 }).body.dark = true; });
+const cube = addBody(B(0, 1, 16, 17, 14.5, 15.5), new CANNON.Box(new CANNON.Vec3(0.5, 0.5, 0.5)), { mass: tune.cube_mass, angularDamping: 0.3, linearDamping: 0.05 });
+const player = addBody({ c: V(0, 0.6, -12.5), prev: V(0, 0.6, -12.5), grounded: false }, new CANNON.Sphere(RADIUS),
+  { mass: 80, material: playerMat, fixedRotation: true, linearDamping: 0, collisionFilterGroup: 8, collisionFilterMask: 1 });
+player.body.updateMassProperties();
+let lastBump = 0; // the cube knocks when it lands, louder the harder
+cube.body.addEventListener('collide', e => {
+  const v = Math.abs(e.contact.getImpactVelocityAlongNormal());
+  if (v > 2 && state.t - lastBump > 0.08) { lastBump = state.t; tone(170, 0.08, 'square', Math.min(0.3, v * 0.02)); }
+});
+// The nearest thing along a ray: { body, p: the point, n: the surface normal, t: the distance }.
+const rayResult = new CANNON.RaycastResult(), cv = v => new CANNON.Vec3(v.x, v.y, v.z);
+function ray(o, d, len, mask) {
+  rayResult.reset();
+  phys.raycastClosest(cv(o), cv(o.clone().addScaledVector(d, len)), { collisionFilterMask: mask, skipBackfaces: true }, rayResult);
+  if (!rayResult.hasHit) return null;
+  return { body: rayResult.body, p: V(0, 0, 0).copy(rayResult.hitPointWorld), n: V(0, 0, 0).copy(rayResult.hitNormalWorld), t: rayResult.distance };
 }
-// How far the player would really fall if gravity pulled along axis a, direction s.
-function fallDist(a, s) {
-  let best = Infinity;
-  for (const o of solids) {
-    if (AXES.some(k => k !== a && Math.abs(o.c[k] - player.c[k]) >= o.h[k] + player.h[k] - 1e-6)) continue;
-    const gap = s * (o.c[a] - player.c[a]) - o.h[a] - player.h[a];
-    if (gap > -1e-3 && gap < best) best = gap;
-  }
-  return Math.max(0, best);
-}
-console.assert(raycast(V(0, 1, -12), V(0, -1, 0)).s.dark && !raycast(V(0, 1, -12), V(1, 0, 0)).s.dark, 'raycast self-check');
+console.assert(ray(V(0, 1, -12), V(0, -1, 0), 9, 3).body.dark && !ray(V(0, 1, -12), V(1, 0, 0), 9, 3).body.dark, 'ray self-check');
 
-// Gravity and the view. qBase turns world-up into the player's up; yaw and pitch look around in it.
-let g, yaw, pitch, flipT;
-const qBase = new THREE.Quaternion(), camQ = new THREE.Quaternion(), flipFrom = new THREE.Quaternion();
-const upVec = () => { const u = V(0, 0, 0); u[g.a] = -g.s; return u; };
+// Gravity and the view. gdir is the way things fall; qBase turns world-up into the player's up;
+// yaw and pitch look around in that frame. The view is never levelled for the player.
+let yaw, pitch, flipT;
+const gdir = V(0, -1, 0), qBase = new THREE.Quaternion(), camQ = new THREE.Quaternion(), flipFrom = new THREE.Quaternion();
+const upVec = () => gdir.clone().negate();
 const lookQ = (p = pitch) => qBase.clone().multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(p, yaw, 0, 'YXZ')));
 const eyePos = c => c.clone().addScaledVector(upVec(), EYE);
-function setGravity(a, s) {
-  if (a === g.a && s === g.s) return;
+function setGravity(dir) {
+  if (dir.dot(gdir) > 0.999) return;
   const fwd = V(0, 0, -1).applyQuaternion(lookQ()), oldUp = upVec();
-  g = { a, s };
+  gdir.copy(dir).normalize();
   qBase.premultiply(new THREE.Quaternion().setFromUnitVectors(oldUp, upVec()));
-  // Keep looking at what was shot: only the roll changes, so the player watches the fall.
+  // The look direction stays where the player left it; only the horizon rolls under them.
   const d = fwd.applyQuaternion(qBase.clone().invert());
   pitch = Math.max(-1.5, Math.min(1.5, Math.asin(Math.max(-1, Math.min(1, d.y)))));
   yaw = Math.atan2(-d.x, -d.z);
   flipFrom.copy(camQ); flipT = 0; player.grounded = false;
-  state.gravity = (s > 0 ? '+' : '-') + a;
+  state.gravity = gdir.toArray().map(n => n.toFixed(2)).join(',');
 }
-const resetCube = () => { cube.c.set(...CUBE_START); cube.v.set(0, 0, 0); };
+function resetCube() {
+  cube.body.position.set(...CUBE_START); cube.body.velocity.setZero(); cube.body.angularVelocity.setZero();
+  cube.body.quaternion.set(0, 0, 0, 1); cube.c.set(...CUBE_START); release();
+}
 function respawn() { // back to the start of the room you are in, the floor as the ground
-  g = { a: 'y', s: -1 }; qBase.identity(); yaw = Math.PI; pitch = 0; flipT = 99;
-  player.c.set(...ROOMS[state.room].start); player.prev.copy(player.c); player.v.set(0, 0, 0); player.grounded = false;
+  gdir.set(0, -1, 0); qBase.identity(); yaw = Math.PI; pitch = 0; flipT = 99;
+  player.body.position.set(...ROOMS[state.room].start); player.body.velocity.setZero();
+  player.c.copy(player.body.position); player.prev.copy(player.c); player.grounded = false;
   resetCube(); camQ.copy(lookQ()); marker.visible = false;
-  state.gravity = '-y'; state.dead = 0; state.beam = 0; state.aim = null;
+  state.gravity = '0.00,-1.00,0.00'; state.dead = 0; state.beam = 0; state.aim = null; state.dip = 0; state.hurt = 0;
 }
-function shoot() {
-  const o = eyePos(player.c), d = V(0, 0, -1).applyQuaternion(lookQ()), hitAt = raycast(o, d);
+const gunTip = () => eyePos(player.c).addScaledVector(upVec(), -0.25);
+function shoot(eye, dir) { // GRAVITY: a dark panel becomes the ground
+  const hitAt = ray(eye, dir, 300, 3);
   if (!hitAt) return;
-  beam.geometry.setFromPoints([o.clone().addScaledVector(upVec(), -0.25), hitAt.p]);
+  beam.geometry.setFromPoints([gunTip(), hitAt.p]);
   state.beam = 0.12; state.shots++; events.push('shot');
-  if (!hitAt.s.dark) { tone(110, 0.12, 'square', 0.15); return; } // a pale surface: no grip
-  const s = Math.sign(d[hitAt.a]), n = V(0, 0, 0); n[hitAt.a] = -s;
-  marker.position.copy(hitAt.p).addScaledVector(n, 0.03);
-  marker.quaternion.setFromUnitVectors(V(0, 0, 1), n); marker.visible = true;
+  if (!hitAt.body.dark) { tone(110, 0.12, 'square', 0.15); return; } // a pale surface or the cube: no grip
+  marker.position.copy(hitAt.p).addScaledVector(hitAt.n, 0.03);
+  marker.quaternion.setFromUnitVectors(V(0, 0, 1), hitAt.n); marker.visible = true;
   tone(520, 0.18, 'sawtooth', 0.2); tone(130, 0.3, 'sine', 0.3);
-  setGravity(hitAt.a, s);
+  setGravity(hitAt.n.clone().negate());
+}
+function release() { if (state.holding) tone(240, 0.12, 'sine', 0.15); state.holding = false; state.lock = 0; state.snag = 0; }
+function traction(dt, eye, dir) { // TRACTION: the beam locks the cube in stasis, then carries it
+  const cb = cube.body;
+  state.beam = 0.05;
+  if (!state.holding) {
+    const hitAt = ray(eye, dir, tune.traction_range, 1), on = hitAt && hitAt.body === cb;
+    beam.geometry.setFromPoints([gunTip(), hitAt ? hitAt.p : eye.clone().addScaledVector(dir, tune.traction_range)]);
+    if (!on) { state.lock = 0; return; }
+    state.lock = Math.min(1, state.lock + dt / tune.traction_lock_time);
+    cb.velocity.scale(1 - 0.3 * state.lock, cb.velocity); cb.angularVelocity.scale(1 - 0.3 * state.lock, cb.angularVelocity); // stasis sets in
+    if (state.lock >= 1) { state.holding = true; events.push('lock'); tone(700, 0.2, 'sine', 0.25); }
+    return;
+  }
+  const rel = eye.clone().addScaledVector(dir, tune.traction_hold).sub(cube.c);
+  const off = cube.c.clone().sub(player.c), along = off.dot(gdir), side = off.addScaledVector(gdir, -along).length();
+  // A cube snagged behind something for a moment, or one under your own feet, breaks the lock: no riding it.
+  state.snag = rel.length() > tune.traction_break ? state.snag + dt : 0;
+  if (state.snag > tune.traction_snag_time || (along > 0.3 && side < 0.9)) { release(); return; }
+  rel.multiplyScalar(tune.traction_pull).clampLength(0, 12);
+  cb.velocity.set(rel.x, rel.y, rel.z); cb.angularVelocity.scale(0.85, cb.angularVelocity);
+  cb.force.set(-gdir.x, -gdir.y, -gdir.z).scale(tune.gravity * cb.mass, cb.force); // weightless in stasis
+  beam.geometry.setFromPoints([gunTip(), cube.c]);
+}
+function land(speed) { // feedback scaled to how close the landing came to killing
+  const r = Math.min(1, speed / tune.lethal_speed);
+  state.dip = Math.max(state.dip, r * tune.land_dip);
+  if (r > 0.6) state.hurt = Math.max(state.hurt, r);
+  tone(120 - 60 * r, 0.1 + 0.3 * r, 'sine', 0.15 + 0.45 * r);
+  if (r > 0.6) tone(55, 0.35, 'sawtooth', 0.3 * r);
 }
 function updatePlay(dt) {
   if (state.dead > 0) { state.dead -= dt; if (state.dead <= 0) respawn(); return; }
@@ -252,61 +281,77 @@ function updatePlay(dt) {
   yaw += (down.has('ArrowLeft') - down.has('ArrowRight')) * turn - mdx * tune.look_sens;
   pitch += (down.has('ArrowUp') - down.has('ArrowDown')) * turn - mdy * tune.look_sens;
   pitch = Math.max(-1.5, Math.min(1.5, pitch)); mdx = mdy = 0;
-  if (pressed('Mouse0') || pressed('KeyF')) shoot();
+  // The gun: Q switches its setting
+  const eye = eyePos(player.c), dir = V(0, 0, -1).applyQuaternion(lookQ());
+  if (pressed('KeyQ')) { state.mode = state.mode === 'gravity' ? 'traction' : 'gravity'; release(); tone(400, 0.06, 'square', 0.12); }
+  if (state.mode === 'gravity') { if (pressed('Mouse0') || pressed('KeyF')) shoot(eye, dir); }
+  else if (down.has('Mouse0') || down.has('KeyF')) traction(dt, eye, dir);
+  else release();
   // Walk: on the ground the feet grip; in the air momentum carries, and a held key steers a little.
-  const flat = lookQ(0);
+  const flat = lookQ(0), pb = player.body;
   const wish = V(0, 0, -1).applyQuaternion(flat).multiplyScalar(down.has('KeyW') - down.has('KeyS'))
     .addScaledVector(V(1, 0, 0).applyQuaternion(flat), down.has('KeyD') - down.has('KeyA'));
   const moving = wish.lengthSq() > 0; if (moving) wish.normalize();
-  const p = player, k = p.grounded ? tune.ground_grip : moving ? tune.air_control : 0;
-  for (const a of AXES) if (a !== g.a) p.v[a] += (wish[a] * tune.move_speed - p.v[a]) * k;
-  if (p.grounded && pressed('Space')) { p.v[g.a] = -g.s * Math.sqrt(2 * tune.gravity * tune.jump_height); tone(300, 0.08, 'sine', 0.15); }
-  p.v[g.a] = Math.max(-40, Math.min(40, p.v[g.a] + g.s * tune.gravity * dt));
-  p.grounded = false; p.prev.copy(p.c);
-  moveBody(p, solids, (a, v, o) => {
-    if (a !== g.a) { if (o.v) o.v[a] = v; return; } // walking into the cube pushes it
-    if (Math.sign(v) !== g.s) return;               // bumped the head
-    p.grounded = true;
-    const speed = Math.abs(v);
-    if (speed > tune.lethal_speed) {
-      state.dead = tune.respawn_time; state.deaths++; events.push('death'); tone(70, 0.6, 'sawtooth', 0.4);
-    } else if (speed > 5) tone(90, 0.12, 'sine', 0.35);
-  });
-  // The cube falls to the same ground.
-  for (const a of AXES) if (a !== g.a) cube.v[a] *= tune.cube_drag;
-  cube.v[g.a] = Math.max(-40, Math.min(40, cube.v[g.a] + g.s * tune.gravity * dt));
-  moveBody(cube, cubeSolids, (a, v) => { if (a === g.a && Math.abs(v) > 5) tone(160, 0.08, 'square', 0.12); });
+  const v = V(0, 0, 0).copy(pb.velocity), fall = v.dot(gdir), side = v.addScaledVector(gdir, -fall);
+  side.lerp(wish.multiplyScalar(tune.move_speed), player.grounded ? tune.ground_grip : moving ? tune.air_control : 0);
+  let down1 = fall;
+  if (player.grounded && pressed('Space')) { down1 = -Math.sqrt(2 * tune.gravity * tune.jump_height); tone(300, 0.08, 'sine', 0.15); }
+  down1 = Math.min(40, down1);
+  side.addScaledVector(gdir, down1); pb.velocity.set(side.x, side.y, side.z);
+  // Step the world
+  phys.gravity.set(gdir.x * tune.gravity, gdir.y * tune.gravity, gdir.z * tune.gravity);
+  solidContact.friction = tune.friction; solidContact.restitution = tune.bounce; cube.body.mass = tune.cube_mass; cube.body.updateMassProperties();
+  player.prev.copy(player.c);
+  phys.step(STEP);
+  player.c.copy(pb.position); cube.c.copy(cube.body.position);
+  // Standing on something? A contact whose normal points against gravity.
+  const wasGrounded = player.grounded;
+  player.grounded = phys.contacts.some(c => (c.bi === pb || c.bj === pb) && V(0, 0, 0).copy(c.ni).dot(gdir) * (c.bi === pb ? 1 : -1) > 0.5);
+  if (player.grounded && !wasGrounded && down1 > 3) { // landed: down1 is the falling speed it arrived with
+    const back = V(0, 0, 0).copy(pb.velocity).dot(gdir); // the solver pushes a deep landing back out: no bounce
+    if (back < 0) pb.velocity.set(pb.velocity.x - gdir.x * back, pb.velocity.y - gdir.y * back, pb.velocity.z - gdir.z * back);
+    if (down1 > tune.lethal_speed) {
+      state.dead = tune.respawn_time; state.deaths++; events.push('death'); release(); tone(70, 0.6, 'sawtooth', 0.4);
+    } else land(down1);
+  }
+  state.dip *= 0.88; state.hurt *= 0.94;
   // A new room is a checkpoint; room 3 puts the cube back where it starts.
-  while (state.room < ROOMS.length - 1 && p.c.z > ROOMS[state.room + 1].from) {
+  while (state.room < ROOMS.length - 1 && player.c.z > ROOMS[state.room + 1].from) {
     state.room++; events.push('room'); tone(660, 0.15, 'sine', 0.2);
     if (state.room === 2) resetCube();
   }
   // The plate lifts the exit door while something rests on it.
-  const plate = overlap(cube, PLATE) || overlap(p, PLATE);
+  const plate = inside(cube.c, PLATE) || inside(player.c, PLATE);
   if (plate !== state.plate) { state.plate = plate; tone(plate ? 880 : 220, 0.25, 'sine', 0.3); }
-  door.c.y = plate ? DOOR_Y + 100 : DOOR_Y;
-  if (p.c.z > WIN_Z) {
+  door.body.position.y = plate ? DOOR_Y + 100 : DOOR_Y; door.body.aabbNeedsUpdate = true;
+  if (player.c.z > WIN_Z) {
     state.won = true; state.score = Math.round(state.t);
     state.gained = `Exit reached: ${state.t.toFixed(0)} s, ${state.deaths} death${state.deaths === 1 ? '' : 's'}`;
     tone(523, 0.2, 'sine', 0.3); tone(784, 0.5, 'sine', 0.3); scene = 'results'; return;
   }
-  // The view rolls to the new ground.
+  // The horizon rolls to the new ground; the look stays the player's.
   flipT += dt;
   const e = Math.min(1, flipT / Math.max(tune.flip_time, 1e-3));
   camQ.copy(flipFrom).slerp(lookQ(), e * e * (3 - 2 * e));
-  // What the gun points at: whether it grips, how far the real fall is, whether it would kill.
-  const d = V(0, 0, -1).applyQuaternion(lookQ()), aim = raycast(eyePos(p.c), d);
+  // What the gun points at
+  const eye2 = eyePos(player.c), dir2 = V(0, 0, -1).applyQuaternion(lookQ());
   state.aim = null;
-  if (aim && aim.s.dark) {
-    const s = Math.sign(d[aim.a]);
-    if (aim.a === g.a && s === g.s) state.aim = { same: true };
-    else { const fall = fallDist(aim.a, s); state.aim = { fall, lethal: Math.sqrt(2 * tune.gravity * fall) > tune.lethal_speed }; }
+  if (state.mode === 'traction') {
+    const t = ray(eye2, dir2, tune.traction_range, 1);
+    if (state.holding || (t && t.body === cube.body)) state.aim = { cube: true };
+  } else {
+    const aim = ray(eye2, dir2, 300, 3);
+    if (aim && aim.body.dark) { // whether it grips, how far the real fall is, whether it would kill
+      const nd = aim.n.clone().negate();
+      if (nd.dot(gdir) > 0.999) state.aim = { same: true };
+      else { const f = ray(player.c, nd, 300, 1), dist = f ? Math.max(0, f.t - RADIUS) : 99; state.aim = { fall: dist, lethal: Math.sqrt(2 * tune.gravity * dist) > tune.lethal_speed }; }
+    }
   }
-  state.beam -= dt; state.grounded = p.grounded;
+  state.beam -= dt; state.grounded = player.grounded;
 }
 
 // ---- The look: clean and minimal. Pale panels, dark shootable panels, an orange cube,
-// green for the plate and the door it opens, cyan for the gun.
+// green for the plate and the door it opens, cyan for gravity, violet for traction.
 const world = new THREE.Scene();
 world.background = new THREE.Color(0x0b0f14);
 const camera = new THREE.PerspectiveCamera(80, W / H, 0.05, 150);
@@ -330,53 +375,70 @@ function boxMesh(b, mat, tile) { // a textured box, its panels tiled every `tile
   const geo = new THREE.BoxGeometry(b.h.x * 2, b.h.y * 2, b.h.z * 2), uv = geo.attributes.uv;
   const dims = [['z', 'y'], ['z', 'y'], ['x', 'z'], ['x', 'z'], ['x', 'y'], ['x', 'y']];
   for (let i = 0; i < 24; i++) { const [u, v] = dims[i >> 2]; uv.setXY(i, uv.getX(i) * b.h[u] * 2 / tile, uv.getY(i) * b.h[v] * 2 / tile); }
-  const m = new THREE.Mesh(geo, mat); m.position.copy(b.c); world.add(m); return m;
+  const m = new THREE.Mesh(geo, mat); m.position.copy(b.c); m.rotation.z = b.rot || 0; world.add(m); return m;
 }
 const std = (map, o) => new THREE.MeshStandardMaterial({ map, roughness: 0.7, ...o });
 const wallMat = std(panelTex('#e4e7eb', '#b9c0c9')), blockMat = std(panelTex('#aeb9c6', '#8793a2'));
 const darkMat = std(panelTex('#2c333d', '#161a20')), cubeMat = std(panelTex('#3a4350', '#20262e', '#ff8a1f'), { roughness: 0.5 });
 const doorMat = std(panelTex('#1f9d55', '#0f5c30'), { emissive: 0x0b3a1e });
+const glassMat = new THREE.MeshStandardMaterial({ color: 0x9fd8ff, transparent: true, opacity: 0.25, roughness: 0.2, depthWrite: false });
 const green = new THREE.MeshBasicMaterial({ color: 0x5dff9a }), plateMat = new THREE.MeshBasicMaterial({ color: 0x1f9d55 });
 walls.forEach(b => boxMesh(b, wallMat, 2)); blocks.forEach(b => boxMesh(b, blockMat, 2));
-panels.forEach(b => boxMesh(b, darkMat, 1));
+tube.forEach(b => boxMesh(b, glassMat, 1)); panels.forEach(b => boxMesh(b, darkMat, 1));
 cube.mesh = boxMesh(cube, cubeMat, 1); door.mesh = boxMesh(door, doorMat, 1.2);
 boxMesh(endGlow, green, 1);
-boxMesh(B(3.3, 5.7, 19, 19.06, 23.3, 25.7), plateMat, 1);   // the pressure plate
-boxMesh(B(3.3, 5.7, 24.96, 25, 23.3, 25.7), plateMat, 1);   // its mark on the ceiling, straight above
+boxMesh(B(3.1, 4.9, 16, 16.06, 22.1, 23.9), plateMat, 1);   // the pressure plate, at the bottom of the tube
+boxMesh(B(3.1, 4.9, 24.96, 25, 22.1, 23.9), plateMat, 1);   // its mark on the ceiling, straight above
 const glow = new THREE.MeshBasicMaterial({ color: 0x35e0ff, side: THREE.DoubleSide });
+const gunGlow = new THREE.MeshBasicMaterial({ color: 0x35e0ff });
+const MODE_COLOR = { gravity: 0x35e0ff, traction: 0xc77dff };
 const marker = new THREE.Mesh(new THREE.RingGeometry(0.45, 0.6, 40), glow); marker.visible = false; // where the ground was set
 const beam = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x35e0ff }));
-beam.frustumCulled = false; world.add(marker, beam);
+const stasis = new THREE.Mesh(new THREE.SphereGeometry(0.95, 24, 16), // the ball of stasis around a locked cube
+  new THREE.MeshBasicMaterial({ color: 0xc77dff, transparent: true, opacity: 0.3, depthWrite: false }));
+beam.frustumCulled = false; world.add(marker, beam, stasis);
 // The gravity gun, held in view.
 const gun = new THREE.Group(), gunMat = new THREE.MeshStandardMaterial({ color: 0x2b323c, roughness: 0.4, metalness: 0.6 });
 const part = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); gun.add(m); return m; };
 part(new THREE.BoxGeometry(0.09, 0.1, 0.34), gunMat, 0, 0, 0);
 part(new THREE.BoxGeometry(0.06, 0.16, 0.07), gunMat, 0, -0.11, 0.11);
 part(new THREE.CylinderGeometry(0.035, 0.05, 0.22, 12), gunMat, 0, 0.01, -0.26).rotation.x = Math.PI / 2;
-part(new THREE.TorusGeometry(0.06, 0.014, 8, 20), glow, 0, 0.01, -0.3);
-part(new THREE.TorusGeometry(0.06, 0.014, 8, 20), glow, 0, 0.01, -0.2);
-part(new THREE.SphereGeometry(0.035, 12, 8), glow, 0, 0.07, 0.02);
+part(new THREE.TorusGeometry(0.06, 0.014, 8, 20), gunGlow, 0, 0.01, -0.3);
+part(new THREE.TorusGeometry(0.06, 0.014, 8, 20), gunGlow, 0, 0.01, -0.2);
+part(new THREE.SphereGeometry(0.035, 12, 8), gunGlow, 0, 0.07, 0.02);
 gun.position.set(0.26, -0.22, -0.5); camera.add(gun);
 
 function drawWorld() {
-  cube.mesh.position.copy(cube.c); door.mesh.position.copy(door.c);
+  cube.mesh.position.copy(cube.body.position); cube.mesh.quaternion.copy(cube.body.quaternion);
+  door.mesh.position.copy(door.body.position);
   plateMat.color.set(state.plate ? 0x5dff9a : 0x1f9d55);
+  gunGlow.color.set(MODE_COLOR[state.mode]); beam.material.color.set(MODE_COLOR[state.mode]);
   beam.visible = state.beam > 0;
+  stasis.visible = state.lock > 0; stasis.position.copy(cube.body.position); stasis.scale.setScalar(Math.max(0.01, state.lock));
   renderer.render(world, camera);
   ctx.clearRect(0, 0, W, H);
 }
 function drawHud() {
-  const aim = state.aim, col = !aim ? '#8c98a6' : aim.lethal ? '#ff4136' : '#35e0ff';
+  const aim = state.aim, traction = state.mode === 'traction';
+  const col = !aim ? '#8c98a6' : aim.lethal ? '#ff4136' : traction ? '#c77dff' : '#35e0ff';
+  if (state.hurt > 0.02) { // a hard landing reddens the edges
+    const gr = ctx.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, H * 0.75);
+    gr.addColorStop(0, 'rgba(200, 0, 0, 0)'); gr.addColorStop(1, `rgba(200, 0, 0, ${(state.hurt * 0.6).toFixed(3)})`);
+    ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H);
+  }
   ctx.shadowColor = '#000'; ctx.shadowBlur = 6;
   ctx.strokeStyle = col; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.arc(W / 2, H / 2, 9, 0, 7); ctx.stroke();
   for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
     ctx.beginPath(); ctx.moveTo(W / 2 + dx * 14, H / 2 + dy * 14); ctx.lineTo(W / 2 + dx * 22, H / 2 + dy * 22); ctx.stroke();
   }
-  if (aim && !aim.same) text(aim.lethal ? `DEADLY FALL  ${aim.fall.toFixed(0)} m` : `fall ${aim.fall.toFixed(0)} m`, W / 2, H / 2 + 48, 22, col);
+  if (aim && aim.fall !== undefined) text(aim.lethal ? `DEADLY FALL  ${aim.fall.toFixed(0)} m` : `fall ${aim.fall.toFixed(0)} m`, W / 2, H / 2 + 48, 22, col);
+  if (traction && state.lock > 0) text(state.holding ? 'LOCKED' : 'locking', W / 2, H / 2 + 48, 22, col);
   text(`Room ${state.room + 1} of ${ROOMS.length}`, 24, 30, 22, '#fff', 'left');
   text(`Deaths ${state.deaths}`, W - 24, 30, 22, '#fff', 'right');
-  text('WASD move · Space jump · Click or F: shoot a dark panel to make it the ground · R restart room', W / 2, H - 28, 20, '#fff');
+  text(`Gun: ${traction ? 'TRACTION' : 'GRAVITY'}  (Q switches)`, W / 2, 30, 22, traction ? '#c77dff' : '#35e0ff');
+  text(traction ? 'TRACTION: hold click or F on the cube to lock it in stasis and carry it · R restart room'
+    : 'GRAVITY: click or F on a dark panel to make it the ground · WASD move · Space jump · R restart room', W / 2, H - 28, 20, '#fff');
   ctx.shadowBlur = 0;
   if (state.dead > 0) {
     ctx.fillStyle = 'rgba(150, 0, 0, 0.55)'; ctx.fillRect(0, 0, W, H);
@@ -389,7 +451,7 @@ function drawHud() {
 let scene, state;
 function reset() {
   seed = Number(params.get('seed')) || CONFIG.seed;
-  state = { t: 0, score: 0, gained: '', deaths: 0, shots: 0, room: 0, plate: false, won: false };
+  state = { t: 0, score: 0, gained: '', deaths: 0, shots: 0, room: 0, plate: false, won: false, mode: 'gravity', lock: 0, holding: false, snag: 0 };
   respawn();
 }
 const scenes = {
@@ -398,7 +460,7 @@ const scenes = {
     draw() {
       camera.position.set(-5, 20.5, 12.8); camera.lookAt(0.5, 17, 24);
       drawWorld(); ctx.fillStyle = 'rgba(0, 0, 0, 0.6)'; ctx.fillRect(0, H - 90, W, 60);
-      ['Pressure plate', 'Cube', 'Exit door', 'Gravity gun'].forEach((n, i) => text(n, W * (0.14 + i * 0.24), H - 60, 26, '#fff'));
+      ['Cube', 'Plate in its tube', 'Exit door', 'Ramp', 'Gravity gun'].forEach((n, i) => text(n, W * (0.1 + i * 0.2), H - 60, 24, '#fff'));
     },
   },
   title: {
@@ -415,7 +477,7 @@ const scenes = {
       state.t += dt; updatePlay(dt);
     },
     draw() {
-      camera.position.copy(eyePos(player.prev.clone().lerp(player.c, ALPHA)));
+      camera.position.copy(eyePos(player.prev.clone().lerp(player.c, ALPHA)).addScaledVector(upVec(), -state.dip));
       camera.quaternion.copy(camQ);
       drawWorld(); drawHud();
     },
