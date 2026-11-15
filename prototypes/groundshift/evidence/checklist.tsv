@@ -1,0 +1,23 @@
+L1	pass	evidence/play.png	pale panels, dark shootable panels, cyan gun, orange cube and green door and plate in evidence/figures.png
+L2	pass	evidence/room2-deadly.png	a sterile test facility, one idea a room; nothing of the reference game copied
+L3	pass	evidence/play.png	3D, first-person
+F1	pass	index.html:238	a shot on a pale surface is refused; only dark panels re-aim gravity
+F2	pass	evidence/room1-ceiling.png	recorded clear crosses the wall by the ceiling, 0 deaths
+F3	pass	evidence/room2-wall.png	ceiling from the floor is a 21 m deadly fall; wall then ceiling then ledge clears it (recorded-clear.log)
+F4	pass	evidence/room3-plate.png	cube pushed on the ceiling, dropped on the plate, door opened (recorded-clear.log)
+F5	pass	evidence/death-respawn.log	a death in room 2 respawned at room 2 start; R calls the same respawn
+F6	pass	evidence/room2-deadly.png	red crosshair with DEADLY FALL 21 m; grey on pale surfaces
+F7	pass	evidence/results.png	Exit reached with time and deaths
+F8	pass	evidence/figures.png	plate, its ceiling mark and the exit door are green
+S1	pass	index.html:233	shoot() re-aims gravity on dark panels
+S2	pass	evidence/recorded-clear.log	the cube follows every gravity change in the log
+S3	pass	evidence/room3-plate.png	plate true opens the door; exit reached
+M1	pass	evidence/play.png	start faces the high wall
+M2	pass	index.html:152	a dark ceiling panel over the start
+M3	pass	evidence/room1-ceiling.png	recorded clear does exactly this
+M4	pass	index.html:130	partition 1 has an open doorway
+M5	not_assessed	-	a mark on the brief, not a line to build
+C1	pass	evidence/room2-deadly.png	the deadly warning and the two-fall route are there; when a person reaches it is their play
+C2	pass	evidence/death-respawn.log	death in room 2 returns to room 2 start
+C3	pass	evidence/room3-push.png	the plate is 3 m up, above the jump; the cube reaches it only by the ceiling
+C4	not_assessed	-	a mark on the brief, not a line to build

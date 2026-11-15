@@ -1,0 +1,43 @@
+time	2026-11-15 14:16:26
+keep	lines	0	pinned	0
+briefword	3D	shown	evidence/play.png
+briefword	first-person	unlisted
+checklist	L1	unlisted	-	Look: clean and minimal. Pale flat panels; shootable surfaces clearly darker; cyan gun light and ground marker; orange cube; green glowing exit door and pressure plate. Every figure drawn, no emoji, no plain circles.	
+checklist	L2	unlisted	-	References: Portal (the theme only: a sterile test facility, one room one idea). The gravity gun spike, prototypes/gravity-gun-spike-2026-11-15/ (the look and the feel as played).	
+checklist	L3	unlisted	-	View: 3D · Camera: first-person.	
+checklist	F1	unlisted	-	Gravity gun that grabs only dark panels	
+checklist	F2	unlisted	-	Room 1: flip to cross a wall (safe)	
+checklist	F3	unlisted	-	Room 2: a deadly long fall broken into two safe ones	
+checklist	F4	unlisted	-	Room 3: move the cube onto the pressure plate by gravity; the plate opens the exit door	
+checklist	F5	unlisted	-	Checkpoint at each room's start; R restarts the room	
+checklist	F6	unlisted	-	Crosshair shows whether a surface can be shot and whether the fall is deadly	
+checklist	F7	unlisted	-	Results screen at the exit: time and deaths *(guessed)*	
+checklist	F8	unlisted	-	Each switch and its door share a colour *(guessed)*	
+checklist	S1	unlisted	-	gravity gun · in the slice	
+checklist	S2	unlisted	-	physics objects fall to the ground plane · in the slice	
+checklist	S3	unlisted	-	pressure plate opens the door · in the slice	
+checklist	M1	unlisted	-	You start in a small pale room facing a wall too high to climb.	
+checklist	M2	unlisted	-	One dark panel sits on the ceiling.	
+checklist	M3	unlisted	-	You shoot it, fall up, walk across the ceiling past the wall, and shoot a dark floor panel to come back down.	
+checklist	M4	unlisted	-	The door to room two is open ahead.	
+checklist	M5	unlisted	-	*(guessed)*	
+checklist	C1	unlisted	-	The first real think is room two, about a minute in: the next dark panel is far away and the crosshair warns the fall is deadly, so you must break it into two shorter falls.	
+checklist	C2	unlisted	-	A death puts you back at the room's start.	
+checklist	C3	unlisted	-	Room three adds the cube: only gravity can move it onto the plate.	
+checklist	C4	unlisted	-	*(room contents guessed)*	
+webgl	ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)
+browser	HeadlessChrome/153.0.0.0
+console	play	1210	[.WebGL-0x22f4001d0800]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels
+scene	play	0	title
+scene	play	1	play
+digits	log	22px "Trebuchet MS", "Segoe UI", sans-serif	proportional	5.264
+measure	step-time	play	0.076	11.200	352
+lane	play	stop	5.9	958
+console	play	0	[.WebGL-0x22f4001d0800]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels
+console	play	0	[.WebGL-0x22f4001d0800]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)
+uncaught	play	0
+text	play	canvas	147,16,247,30	31.5	21.00	inside	Room 1 of 3
+text	play	canvas	1060,16,1133,30	31.5	21.00	inside	Deaths 0
+text	play	canvas	283,547,995,563	30.0	21.00	inside	WASD move · Space jump · Click or F: shoot a dark panel to m
+screen	play	drawn
+responds	changed	4

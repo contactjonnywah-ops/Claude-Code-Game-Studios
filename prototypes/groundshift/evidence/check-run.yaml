@@ -1,0 +1,134 @@
+# The one-shot's small check (check-run/1).
+# Written by one-shot-check.sh --record: the results are /prototype's reading of
+# evidence/self-check.tsv; never edited by hand.
+kind: check-run/1
+engine: web
+browser: "HeadlessChrome/153.0.0.0"
+time: "2026-11-15 14:16:26"
+checks:
+  - id: boots
+    result: pass
+    evidence:
+      - "evidence/self-check.tsv"
+  - id: shot
+    result: not_run
+    mark: not assessed
+    why: "the check's own screenshot did not save in this sandbox; evidence/play.png was taken with Playwright and looked at instead"
+    evidence:
+  - id: outlines
+    result: pass
+    evidence:
+      - "evidence/figures.png"
+  - id: brief-words
+    result: pass
+    evidence:
+      - "evidence/brief-words.tsv"
+  - id: emoji
+    result: pass
+    evidence:
+      - "evidence/self-check.tsv"
+  - id: nearest-game
+    result: pass
+    evidence:
+      - "evidence/nearest-game.txt"
+brief_checklist:
+  - id: L1
+    result: pass
+    evidence: "evidence/play.png"
+    item: "Look: clean and minimal. Pale flat panels; shootable surfaces clearly darker; cyan gun light and ground marker; orange cube; green glowing exit door and pressure plate. Every figure drawn, no emoji, no plain circles."
+  - id: L2
+    result: pass
+    evidence: "evidence/room2-deadly.png"
+    item: "References: Portal (the theme only: a sterile test facility, one room one idea). The gravity gun spike, prototypes/gravity-gun-spike-2026-11-15/ (the look and the feel as played)."
+  - id: L3
+    result: pass
+    evidence: "evidence/play.png"
+    item: "View: 3D · Camera: first-person."
+  - id: F1
+    result: pass
+    evidence: "index.html:238"
+    item: "Gravity gun that grabs only dark panels"
+  - id: F2
+    result: pass
+    evidence: "evidence/room1-ceiling.png"
+    item: "Room 1: flip to cross a wall (safe)"
+  - id: F3
+    result: pass
+    evidence: "evidence/room2-wall.png"
+    item: "Room 2: a deadly long fall broken into two safe ones"
+  - id: F4
+    result: pass
+    evidence: "evidence/room3-plate.png"
+    item: "Room 3: move the cube onto the pressure plate by gravity; the plate opens the exit door"
+  - id: F5
+    result: pass
+    evidence: "evidence/death-respawn.log"
+    item: "Checkpoint at each room's start; R restarts the room"
+  - id: F6
+    result: pass
+    evidence: "evidence/room2-deadly.png"
+    item: "Crosshair shows whether a surface can be shot and whether the fall is deadly"
+  - id: F7
+    result: pass
+    evidence: "evidence/results.png"
+    item: "Results screen at the exit: time and deaths *(guessed)*"
+  - id: F8
+    result: pass
+    evidence: "evidence/figures.png"
+    item: "Each switch and its door share a colour *(guessed)*"
+  - id: S1
+    result: pass
+    evidence: "index.html:233"
+    item: "gravity gun · in the slice"
+  - id: S2
+    result: pass
+    evidence: "evidence/recorded-clear.log"
+    item: "physics objects fall to the ground plane · in the slice"
+  - id: S3
+    result: pass
+    evidence: "evidence/room3-plate.png"
+    item: "pressure plate opens the door · in the slice"
+  - id: M1
+    result: pass
+    evidence: "evidence/play.png"
+    item: "You start in a small pale room facing a wall too high to climb."
+  - id: M2
+    result: pass
+    evidence: "index.html:152"
+    item: "One dark panel sits on the ceiling."
+  - id: M3
+    result: pass
+    evidence: "evidence/room1-ceiling.png"
+    item: "You shoot it, fall up, walk across the ceiling past the wall, and shoot a dark floor panel to come back down."
+  - id: M4
+    result: pass
+    evidence: "index.html:130"
+    item: "The door to room two is open ahead."
+  - id: M5
+    result: not_run
+    mark: not assessed
+    why: "a mark on the brief, not a line to build"
+    item: "*(guessed)*"
+  - id: C1
+    result: pass
+    evidence: "evidence/room2-deadly.png"
+    item: "The first real think is room two, about a minute in: the next dark panel is far away and the crosshair warns the fall is deadly, so you must break it into two shorter falls."
+  - id: C2
+    result: pass
+    evidence: "evidence/death-respawn.log"
+    item: "A death puts you back at the room's start."
+  - id: C3
+    result: pass
+    evidence: "evidence/room3-push.png"
+    item: "Room three adds the cube: only gravity can move it onto the plate."
+  - id: C4
+    result: not_run
+    mark: not assessed
+    why: "a mark on the brief, not a line to build"
+    item: "*(room contents guessed)*"
+measures:
+  - id: step-time
+    value: 11.200
+    unit: ms
+    by: browser
+    detail: "mean 0.076 ms, slowest 11.200 ms, 352 steps"
