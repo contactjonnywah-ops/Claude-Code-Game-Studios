@@ -23,6 +23,8 @@ make a brief and a demo level with a goal to reach
 4. Gun limits: specific surfaces can be only shot. These surfaces should be darker than the others for testing purposes.
 5. Look: Keep the look clean and minimal for testing purposes.
 
+After play: There was an issue with the cube - it got stuck in the doorway and I couldn't complete the puzzle.
+
 **Pitch:** Trapped in a test facility, you shoot a wall to make it the floor, and everything loose falls with you.
 
 **Genre:** first-person 3D puzzle platformer

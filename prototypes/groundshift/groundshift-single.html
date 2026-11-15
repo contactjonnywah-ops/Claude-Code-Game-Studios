@@ -4416,7 +4416,9 @@ const ROOMS = [ // where each room starts you, and the z past which you are in i
 ];
 const player = { ...B(-0.6, 0.6, 0, 1.2, -0.6, 0.6), v: V(0, 0, 0), grounded: false, prev: V(0, 0, 0) };
 const EYE = 0.45; // metres above the player's centre, along up
-const solids = statics.concat(cube), cubeSolids = solids.concat(player);
+// The cube cannot enter room 3's doorways: pushed in there, nobody could get behind it to push it out.
+const cubeStops = [B(2.8, 5.2, 16, 18.6, 11, 12), B(-3.2, -0.8, 16, 18.6, 26, 27)];
+const solids = statics.concat(cube), cubeSolids = solids.concat(player, cubeStops);
 
 // Move a body one step, an axis at a time; a hit puts it flush against what it hit.
 function moveBody(b, others, onHit) {
