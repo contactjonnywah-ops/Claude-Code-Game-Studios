@@ -16,6 +16,13 @@
 </style>
 </head>
 <body>
+<script>
+// A load or WebGL failure is shown, never a silent black screen.
+addEventListener('error', e => document.body.insertAdjacentHTML('beforeend',
+  '<p style="position:absolute;top:0;left:0;z-index:9;margin:16px;color:#fff;font:18px sans-serif">The game could not start: ' +
+  (e.message || 'a file did not load (' + (e.target.src || '?') + ')') +
+  '. Open index.html from its folder in Chrome, Edge or Firefox.</p>'), true);
+</script>
 <canvas id="gl"></canvas>
 <canvas id="game"></canvas>
 <script src="vendor/three.js"></script>
