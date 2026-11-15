@@ -30,11 +30,13 @@ After play: 1. in a sense - but with flavour. This uses a different setting on t
 3. landing feedback
 4. real physics
 
+After play: My machine is too low spec to test this prototype. Provide me access to your virtual machine so I can test.
+
 **Pitch:** Trapped in a test facility, you shoot a wall to make it the floor, and everything loose falls with you.
 
 **Genre:** first-person 3D puzzle platformer
 
-**Controls:** WASD move, Space jump, mouse or arrow keys look, Q switch the gun's setting, click or F fire (GRAVITY) or hold to lock and carry (TRACTION), R restart room, P pause, M mute.
+**Controls:** WASD move, Space jump, mouse or arrow keys look, Q switch the gun's setting, click or F fire (GRAVITY) or hold to lock and carry (TRACTION), R restart room, P pause, M mute, L low-spec mode.
 
 **Question:** Does a three-room level built on the gravity gun make a satisfying puzzle from start to exit?
 
@@ -75,6 +77,7 @@ The first real think is room two, about a minute in: the next dark panel is far 
 - [x] Gravitational traction: a second gun setting that slowly locks an object in a ball of stasis and carries it on the beam
 - [x] Landing feedback scaled to how hard you land
 - [x] Real physics: the cube tumbles, a ramp, gravity can point along any surface
+- [x] Low-spec mode (L): half resolution and flat light
 
 ## Your systems
 - gravity gun · in the slice

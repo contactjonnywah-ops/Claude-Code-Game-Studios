@@ -1,2 +1,3 @@
 iteration 1	the cube can no longer be pushed into the doorways of room 3	errors: none	evidence/iteration-1-exit-doorway.png evidence/iteration-1-entry-doorway.png
 iteration 2	added the traction beam, landing feedback and real physics (cannon-es: tumbling cube, ramp, gravity along any surface); room 3 plate moved into a glass tube; doorway cube stops removed	errors: none	evidence/room3-carry.png evidence/iteration-2-tilted.png evidence/iteration-2-ramp-aim.png evidence/room3-plate.png
+iteration 3	added low-spec mode (L, or ?low=1): half resolution, point lights off	errors: none	evidence/iteration-3-low.png
