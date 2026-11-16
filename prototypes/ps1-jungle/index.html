@@ -122,13 +122,13 @@ const LOW_W = 160, LOW_H = 120;
 const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
 // Facility layout. One character per 1.6 m cell. Row 0 is the north wall, facing the forest.
-// # wall  . floor  D exit door  S start  N note  T torch  K keycard  C camera  P breached pen  H howler
+// # wall  . floor  D exit door  S start  N note  T torch  K keycard  C camera  P breached pen  H howler start
 const FAC_MAP = [
   '#####D#####',
   '#K..#C#..P#',
-  '#...#.#...#',
+  '#..H#.#...#',
   '#.###.#.###',
-  '#....H....#',
+  '#.........#',
   '###.#####.#',
   '#...#.N.TS#',
   '###########'
@@ -997,12 +997,14 @@ let frames = 0, lastFps = 0;
 // Rules live here; the renderer above knows nothing about them.
 const PACE = {
   sneak: { speed: 1.5, stride: 0.6,  vol: 0.25, noise: 1.2 },
-  walk:  { speed: 3.0, stride: 0.45, vol: 1.0,  noise: 6 },
+  walk:  { speed: 3.0, stride: 0.45, vol: 1.0,  noise: 4.5 },
   run:   { speed: 5.4, stride: 0.3,  vol: 1.6,  noise: 11 }
 };
-const NOISE_CRANK = 9, NOISE_SHUTTER = 12, NOISE_DOOR = 10;
+const NOISE_CRANK = 7, NOISE_SHUTTER = 12, NOISE_DOOR = 10;
 const CRANK_RATE = 12;              // % per second: a full wind takes over 8 s
-const HOWLER = { wander: 1.2, hunt: 4.4, catchDist: 0.95, listen: 3 };
+// react: it stops and howls before it charges. hunt: faster than a walk, slower than a run.
+// search: the last stretch to the sound is slow, so a player who moves off quietly gets away.
+const HOWLER = { wander: 1.2, hunt: 3.6, search: 1.3, alert: 0, catchDist: 0.8, listen: 3, react: 1.0, grace: 14 };
 const SKULKER = { sense: 4.2, windup: 0.45, dive: 15, flee: 13, catchDist: 0.85, litRange: 15 };
 const OUTPOST = { x: 5, z: -13 };
 
@@ -1298,11 +1300,15 @@ function howlerHear(x, z) {
   const inside = r >= 1;
   r = Math.max(1, r);
   if (!isOpen(r, c)) return;
-  if (howler.state !== 'hunt') tone(170, 430, 0.7, 'sawtooth', 0.35 * near(Math.hypot(howler.x - x, howler.z - z)));
-  howler.state = 'hunt';
+  if (howler.state === 'wander') { // first it stops, turns and howls: the player's warning
+    tone(170, 430, 0.7, 'sawtooth', 0.35 * near(Math.hypot(howler.x - x, howler.z - z)));
+    howler.state = 'alert';
+    howler.wait = HOWLER.react;
+    howler.face = Math.atan2(x - howler.x, z - howler.z);
+    if (!game.warned) { game.warned = true; say('Something heard that.', 3); }
+  }
   howler.path = route(cellOf(howler.x, howler.z), [r, c]);
   howler.point = inside ? [x, z] : null; // the exact spot the sound came from
-  howler.wait = 0;
 }
 function updateHowler(dt, px, pz) {
   const h = howler, d = Math.hypot(px - h.x, pz - h.z);
@@ -1310,10 +1316,12 @@ function updateHowler(dt, px, pz) {
     h.click = h.state === 'hunt' ? 0.4 : 1.5;
     tone(2600, 1700, 0.03, 'square', 0.22 * near(d));
   }
-  if (d < HOWLER.catchDist) return caught();
-  const goal = h.path.length ? cellCenter(...h.path[0]) : h.point;
+  if (d < HOWLER.catchDist && los(px, pz, h.x, h.z)) return caught(); // never through a wall
+  if (h.state === 'alert' && (h.wait -= dt) <= 0) h.state = 'hunt';
+  const goal = h.state === 'alert' ? null : h.path.length ? cellCenter(...h.path[0]) : h.point;
   if (goal) {
-    const gx = goal[0] - h.x, gz = goal[1] - h.z, gd = Math.hypot(gx, gz), step = HOWLER[h.state] * dt;
+    const closing = h.state === 'hunt' && h.path.length <= 1; // inside the last cell: feel for it
+    const gx = goal[0] - h.x, gz = goal[1] - h.z, gd = Math.hypot(gx, gz), step = HOWLER[closing ? 'search' : h.state] * dt;
     if (gd <= step) {
       h.x = goal[0]; h.z = goal[1];
       if (h.path.length) h.path.shift(); else h.point = null;
@@ -1325,7 +1333,7 @@ function updateHowler(dt, px, pz) {
       h.x += gx / gd * step; h.z += gz / gd * step;
       h.face = Math.atan2(gx, gz);
     }
-  } else if ((h.wait -= dt) <= 0) {
+  } else if (h.state === 'wander' && (h.wait -= dt) <= 0) {
     let r, c;
     do { r = 1 + Math.floor(Math.random() * (ROWS - 2)); c = 1 + Math.floor(Math.random() * (COLS - 2)); } while (!isOpen(r, c));
     h.path = route(cellOf(h.x, h.z), [r, c]);
@@ -1335,7 +1343,7 @@ function updateHowler(dt, px, pz) {
   let turn = h.face - h.g.rotation.y;
   turn = Math.atan2(Math.sin(turn), Math.cos(turn));
   h.g.rotation.y += turn * Math.min(1, dt * 8);
-  h.head.rotation.y = moving ? 0 : Math.sin(t * 1.7) * 0.9; // standing still, it sweeps its head to listen
+  h.head.rotation.y = moving || h.state === 'alert' ? 0 : Math.sin(t * 1.7) * 0.9; // standing still, it sweeps its head to listen
 }
 
 // ---------- the skulker: waits in the dark, dives at anything close, flees light
@@ -1426,7 +1434,8 @@ function resetGame() {
   camera.quaternion.setFromEuler(camEuler.set(0, Math.PI / 2, 0, 'YXZ')); // facing the note and the torch
   beamDir.set(-1, 0, 0);
   [howler.x, howler.z] = cellCenter(...findCell('H'));
-  Object.assign(howler, { state: 'wander', path: [], point: null, wait: 6, click: 2 });
+  Object.assign(howler, { state: 'wander', path: [], point: null, wait: HOWLER.grace, click: 2 });
+  game.warned = false;
   howler.g.position.set(howler.x, 0, howler.z);
   skulkers.forEach(s => { s.at = s.home; [s.x, s.z] = DARK[s.home]; s.state = 'hide'; });
   applyBright();
@@ -1465,7 +1474,7 @@ function updateGame(dt, live, active) {
   if (!game.dead && Math.hypot(px - OUTPOST.x, pz - (OUTPOST.z + 1.9)) < 1.4) win();
 }
 resetGame();
-window.demo = { game, camera, howler, skulkers, items, DARK, OUTPOST, cellCenter, findCell, makeNoise, takePhoto, interact,
+window.demo = { game, camera, howler, skulkers, items, DARK, OUTPOST, cellCenter, findCell, makeNoise, takePhoto, interact, howlerHear,
   get battery() { return battery; }, set battery(v) { battery = v; } }; // handle for tests and tuning
 
 function animate() {
