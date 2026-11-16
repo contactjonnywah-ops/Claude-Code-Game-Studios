@@ -78,6 +78,7 @@
     hold R wind torch · left click photograph · Tab album · O options<br>
     Touch: CROUCH toggles sneaking, pushing the stick to its edge runs
   </p>
+  <p id="build" style="font-size:12px;color:#777;margin:0;">build 16</p>
   <button id="startBtn">Enter</button>
   <button id="optionsBtn" style="margin-top:0.6rem;background:#222;border-color:#555;">Options</button>
 </div>
@@ -96,6 +97,7 @@
     <label><span>Sensitivity</span><input id="optSens" type="range" min="0.5" max="2" step="0.1" value="1"></label>
     <label><span>Vertex Snap</span><input id="optSnap" type="checkbox" checked></label>
     <label><span>Debug info</span><input id="optDebug" type="checkbox"></label>
+    <label><span>Fear test</span><input id="optFear" type="range" min="0" max="1" step="0.05" value="0"></label>
     <label><span>Brightness</span><input id="optBright" type="range" min="0.25" max="2.8" step="0.05" value="1"></label>
     <label><span>Gamma</span><input id="optGamma" type="range" min="1.4" max="3" step="0.05" value="2.2"></label>
     <label><span>Contrast</span><input id="optContrast" type="range" min="0.5" max="1.6" step="0.05" value="1"></label>
@@ -353,7 +355,8 @@ const postMat = new THREE.ShaderMaterial({
       float luma = dot(col, vec3(0.299, 0.587, 0.114));
       // Dim light loses its colour, as it does to the eye. Without this, faint red spill
       // from the point lights dithers into red speckle on everything nearby.
-      col = max(mix(vec3(luma), col, saturation * smoothstep(0.0, 0.1, luma)), 0.0);
+      // ...and fear drains it further
+      col = max(mix(vec3(luma), col, saturation * (1.0 - threat * 0.65) * smoothstep(0.0, 0.1, luma)), 0.0);
 
       // Battery-reactive vignette
       // Vignette: heavier on a weak torch, and it closes in under threat
@@ -392,7 +395,7 @@ const upMat = new THREE.ShaderMaterial({
     varying vec2 vUv;
     void main() {
       // Fear tears the picture: a few rows at a time jump sideways, reshuffled many times a second
-      float row = floor(vUv.y * 90.0), tick = floor(time * 16.0);
+      float row = floor(vUv.y * 90.0), tick = floor(mod(time, 60.0) * 16.0);
       float tear = step(1.0 - threat * 0.35, hash1(row + tick * 13.0)) * (hash1(row * 3.1 + tick) - 0.5) * threat * 0.07;
       vec2 uv = vec2(vUv.x + tear, vUv.y);
       vec2 dir = (vUv - 0.5) * (chroma + threat * 0.012);
@@ -1610,6 +1613,7 @@ function updateGame(dt, live, active) {
     threat = { hunt: 1, alert: 1, curious: 0.6, wander: 0.35 }[howler.state] * Math.max(0, 1 - hd / (howler.state === 'wander' ? 4 : 10));
     if (skulkers.some(s => s.state === 'windup' || s.state === 'dive')) threat = 1;
   }
+  threat = Math.max(threat, +document.getElementById('optFear').value); // Options > Fear test holds it on
   game.threat += (threat - game.threat) * Math.min(1, dt * 3);
   postMat.uniforms.threat.value = game.threat;
   updateAmbience(pz >= FAC_Z0, live ? game.threat : 0, dt);
