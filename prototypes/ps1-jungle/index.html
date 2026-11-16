@@ -78,7 +78,7 @@
     hold R wind torch · left click photograph · Tab album · O options<br>
     Touch: CROUCH toggles sneaking, pushing the stick to its edge runs
   </p>
-  <p id="build" style="font-size:12px;color:#777;margin:0;">build 18</p>
+  <p id="build" style="font-size:12px;color:#777;margin:0;">build 19</p>
   <button id="startBtn">Enter</button>
   <button id="optionsBtn" style="margin-top:0.6rem;background:#222;border-color:#555;">Options</button>
 </div>
@@ -92,7 +92,7 @@
     <label><span>Scanlines</span><input id="optScan" type="range" min="0" max="0.4" step="0.01" value="0.06"></label>
     <label><span>Color Crush</span><input id="optCrush" type="range" min="3" max="32" step="1" value="14"></label>
     <label><span>Grade</span><select id="optGrade"><option value="0">Cold Moon</option><option value="1" selected>Warm Torch</option><option value="2">Panic</option></select></label>
-    <label><span>Preset</span><select id="optPreset"><option value="custom">Custom</option><option value="night">Night</option><option value="storm">Storm</option><option value="panic">Panic</option></select></label>
+    <label><span>Preset</span><select id="optPreset"><option value="amber" selected>Amber Tube</option><option value="custom">Custom</option><option value="night">Night</option><option value="storm">Storm</option><option value="panic">Panic</option></select></label>
     <label><span>Letterbox</span><input id="optLetter" type="checkbox"></label>
     <label><span>Sensitivity</span><input id="optSens" type="range" min="0.5" max="2" step="0.1" value="1"></label>
     <label><span>Vertex Snap</span><input id="optSnap" type="checkbox" checked></label>
@@ -919,9 +919,18 @@ function setOpt(id, value) {
   el.dispatchEvent(new Event('input', { bubbles: true }));
   el.dispatchEvent(new Event('change', { bubbles: true }));
 }
+// Amber Tube is the game's look and loads by default. Every control stays live:
+// touch any of them and the preset box switches to Custom.
+const AMBER = { optRes: 160, optDither: 2, optCrush: 16, optGrade: 1, optSat: 0.85, optGamma: 2.05, optContrast: 1.1,
+  optNoise: 0.18, optScan: 0.25, optChroma: 0.006 };
+let applyingPreset = false;
 document.getElementById('optPreset').addEventListener('change', e => {
   const p = e.target.value;
-  if (p === 'night') {
+  applyingPreset = true;
+  if (p === 'amber') {
+    Object.entries(AMBER).forEach(([id, v]) => setOpt(id, v));
+    fogDensity = 0.03;
+  } else if (p === 'night') {
     setOpt('optGrade', 0);
     setOpt('optNoise', 0.15);
     fogDensity = 0.05;
@@ -934,7 +943,11 @@ document.getElementById('optPreset').addEventListener('change', e => {
     setOpt('optNoise', 0.4);
     setOpt('optChroma', 0.008);
   }
+  applyingPreset = false;
 });
+const LOOK_IDS = Object.keys(AMBER);
+optList.addEventListener('input', e => { if (!applyingPreset && LOOK_IDS.includes(e.target.id)) document.getElementById('optPreset').value = 'custom'; });
+optList.addEventListener('change', e => { if (!applyingPreset && LOOK_IDS.includes(e.target.id)) document.getElementById('optPreset').value = 'custom'; });
 document.getElementById('optLetter').addEventListener('change', e => {
   document.getElementById('letterbox').style.display = e.target.checked ? 'block' : 'none';
 });
@@ -948,6 +961,7 @@ document.getElementById('optBright').addEventListener('input', e => { brightness
 document.getElementById('optGamma').addEventListener('input', e => { postMat.uniforms.gamma.value = parseFloat(e.target.value); });
 document.getElementById('optContrast').addEventListener('input', e => { postMat.uniforms.contrast.value = parseFloat(e.target.value); });
 document.getElementById('optSat').addEventListener('input', e => { postMat.uniforms.saturation.value = parseFloat(e.target.value); });
+setOpt('optPreset', 'amber'); // the default look
 const startBtn = document.getElementById('startBtn');
 const crosshair = document.getElementById('crosshair');
 const hud = document.getElementById('hud');
