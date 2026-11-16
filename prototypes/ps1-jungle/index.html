@@ -78,7 +78,7 @@
     hold R wind torch · left click photograph · Tab album · O options<br>
     Touch: CROUCH toggles sneaking, pushing the stick to its edge runs
   </p>
-  <p id="build" style="font-size:12px;color:#777;margin:0;">build 20</p>
+  <p id="build" style="font-size:12px;color:#777;margin:0;">build 21</p>
   <button id="startBtn">Enter</button>
   <button id="optionsBtn" style="margin-top:0.6rem;background:#222;border-color:#555;">Options</button>
 </div>
@@ -1554,6 +1554,10 @@ const skulkers = [0, 4].map(home => {
   const part = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = mat !== s.eyeMat; s.g.add(m); return m; };
   part(new THREE.IcosahedronGeometry(0.3, 1), hideMat, 0, 0.36, 0).scale.set(0.7, 0.5, 2.0);       // long low body
   part(new THREE.ConeGeometry(0.15, 0.55, 5), hideMat, 0, 0.42, 0.85).rotation.x = Math.PI / 2;    // narrow head
+  s.jaw = part(new THREE.ConeGeometry(0.13, 0.5, 5), hideMat, 0, 0.36, 0.84);                      // lower jaw, shut
+  s.jaw.rotation.x = Math.PI / 2;
+  s.throat = part(new THREE.IcosahedronGeometry(0.075, 0), unlit(1.6, 0.1, 0.08), 0, 0.31, 0.98);  // seen only when it opens
+  s.throat.castShadow = false; s.throat.visible = false;
   part(new THREE.ConeGeometry(0.11, 1.3, 5), hideMat, 0, 0.36, -1.15).rotation.x = -Math.PI / 2;   // whip tail
   [-1, 1].forEach(sd => {
     s.eyes.push(part(new THREE.IcosahedronGeometry(0.035, 0), s.eyeMat, sd * 0.07, 0.47, 0.82));
@@ -1719,24 +1723,40 @@ function caught() {
 function jumpScare(s) {
   if (game.dead) return;
   game.dead = true;
-  game.scare = { s, t: 0, len: 0.6 };
+  game.scare = { s, t: 0, len: 1.15 };
   s.state = 'scare';
-  tone(2400, 500, 0.55, 'sawtooth', 0.55);
-  tone(1700, 260, 0.6, 'square', 0.3);
+  s.throat.visible = true;
+  // the screech: loud, layered, over a second long
+  tone(2600, 700, 1.0, 'sawtooth', 0.9);
+  tone(1900, 420, 1.05, 'square', 0.5);
+  tone(3400, 1200, 0.5, 'sawtooth', 0.5);
+  setTimeout(() => tone(2300, 300, 0.65, 'sawtooth', 0.7), 330);
+  if (fearGain) fearGain.gain.setValueAtTime(0.5, audioCtx.currentTime); // a burst of hiss under it
 }
+const SNOUT = 1.13; // how far the snout tip sits ahead of the body's centre, before scaling
 function updateScare(dt) {
-  const sc = game.scare, s = sc.s, k = Math.min(1, (sc.t += dt) / sc.len);
-  camera.getWorldDirection(camFwd);
-  // the snout closes from 1.9 m to 0.5 m, fast at first; it sits 1.13 m ahead of the body's centre
-  const reach = 0.5 + 1.4 * Math.pow(1 - k, 3) + 1.13;
-  s.g.position.set(camera.position.x + camFwd.x * reach, camera.position.y + camFwd.y * reach - 0.44, camera.position.z + camFwd.z * reach);
-  s.g.rotation.set(-0.25, Math.atan2(-camFwd.x, -camFwd.z), 0, 'YXZ'); // facing you, head up
-  s.g.scale.setScalar(1 + k * 0.5);
+  const sc = game.scare, s = sc.s;
+  sc.t += dt;
+  const lunge = Math.min(1, sc.t / 0.2), ease = 1 - Math.pow(1 - lunge, 3);
+  // Your head is wrenched level and the thing is put dead ahead, at eye height. Wherever you
+  // were looking, up, down or away, it fills the middle of the view.
+  camEuler.setFromQuaternion(camera.quaternion, 'YXZ');
+  camEuler.x *= Math.max(0, 1 - dt * 16);
+  camera.quaternion.setFromEuler(camEuler);
+  const fx = -Math.sin(camEuler.y), fz = -Math.cos(camEuler.y);
+  const scale = 1 + ease * 0.5;
+  const gap = 1.8 - 1.42 * ease;            // snout tip: 1.8 m away, then 0.38 m, in a fifth of a second
+  const reach = gap + SNOUT * scale;         // body centre sits behind the snout, further when it is bigger
+  const shake = lunge >= 1 ? 0.035 : 0;      // then it stays in your face, thrashing
+  s.g.scale.setScalar(scale);
+  s.g.position.set(camera.position.x + fx * reach + (Math.random() - 0.5) * shake,
+    camera.position.y - 0.42 * scale + (Math.random() - 0.5) * shake, camera.position.z + fz * reach);
+  s.g.rotation.set(0, Math.atan2(-fx, -fz), (Math.random() - 0.5) * shake * 4, 'YXZ'); // head-on
+  s.jaw.rotation.x = Math.PI / 2 + ease * (0.75 + Math.sin(sc.t * 45) * 0.15);            // mouth open, snapping
   s.eyeMat.color.setRGB(4, 1.8, 0.3);
   s.eye.intensity = 1.5;
-  s.eyes.forEach(e => e.scale.setScalar(1 + k * 1.8)); // eyes widen
-  if (sc.t < 0.12) lightning = 0.1; // one white flash as it hits
-  if (k >= 1) { game.scare = null; endCaught(); }
+  s.eyes.forEach(e => e.scale.setScalar(1 + ease * 0.9)); // eyes wide
+  if (sc.t >= sc.len) { game.scare = null; endCaught(); }
 }
 function endCaught() {
   tone(90, 40, 1.2, 'sawtooth', 0.4);
@@ -1763,7 +1783,7 @@ function resetGame() {
   album.length = 0; pendingShot = null; albumOpen = false; albumView.style.display = 'none';
   howler.g.position.set(howler.x, 0, howler.z);
   game.scare = null;
-  skulkers.forEach(s => { s.at = s.home; [s.x, s.z] = DARK[s.home]; s.state = 'hide'; s.g.scale.setScalar(1); s.eyes.forEach(e => e.scale.setScalar(1)); });
+  skulkers.forEach(s => { s.at = s.home; [s.x, s.z] = DARK[s.home]; s.state = 'hide'; s.g.scale.setScalar(1); s.eyes.forEach(e => e.scale.setScalar(1)); s.jaw.rotation.x = Math.PI / 2; s.throat.visible = false; });
   Object.assign(leaper, { x: LEAPER.home[0], z: LEAPER.home[1], y: 0, tx: LEAPER.home[0], tz: LEAPER.home[1], state: 'roam', seenT: -9, howlT: 6 });
   applyBright();
 }
@@ -1780,7 +1800,7 @@ function updateGame(dt, live, active) {
   const px = camera.position.x, pz = camera.position.z;
   if (live) { game.wake += dt; game.shotCooldown -= dt; }
   game.flashT -= dt;
-  flashBulb.intensity = game.flashT > 0 ? 90 : game.scare ? 45 : 0; // the scare is lit, or a black creature in the dark is just a black screen
+  flashBulb.intensity = game.flashT > 0 ? 90 : game.scare ? 5 : 0; // the scare is lit, or a black creature in the dark is just a black screen
   if (clock.elapsedTime > msgUntil) msgEl.textContent = '';
 
   // winding the torch: slow, loud, and not while running
@@ -1808,7 +1828,7 @@ function updateGame(dt, live, active) {
     for (const s of skulkers) if (s.state !== 'hide') threat = Math.max(threat, fearAt(Math.hypot(px - s.x, pz - s.z)));
     threat = Math.max(threat, fearAt(Math.hypot(px - leaper.x, pz - leaper.z)));
   }
-  if (game.scare) threat = 1;
+  if (game.scare) threat = 0.7; // frightened, but the picture stays readable
   threat = Math.max(threat, +document.getElementById('optFear').value); // Options > Fear test holds it on
   game.threat += (threat - game.threat) * Math.min(1, dt * (threat > game.threat ? FEAR.rise : FEAR.fall)); // quick to rise, slow to settle
   postMat.uniforms.threat.value = game.threat;
@@ -1822,7 +1842,7 @@ function updateGame(dt, live, active) {
   if (!game.dead && Math.hypot(px - OUTPOST.x, pz - (OUTPOST.z + 1.9)) < 1.4) win();
 }
 resetGame();
-window.demo = { leaper, LEAPER, inMoonlight, los, setOpt, game, camera, howler, skulkers, items, DARK, OUTPOST, cellCenter, findCell, makeNoise, takePhoto, interact, howlerHear,
+window.demo = { jumpScare, leaper, LEAPER, inMoonlight, los, setOpt, game, camera, howler, skulkers, items, DARK, OUTPOST, cellCenter, findCell, makeNoise, takePhoto, interact, howlerHear,
   album, get torchOn() { return flashlightOn; }, get fearVol() { return fearGain ? fearGain.gain.value : 0; }, get grain() { return postMat.uniforms.noiseAmount.value; },
   get battery() { return battery; }, get crouch() { return mobileCrouch; }, set battery(v) { battery = v; } }; // handle for tests and tuning
 
