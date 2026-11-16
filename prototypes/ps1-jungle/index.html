@@ -78,7 +78,7 @@
     hold R wind torch · left click photograph · Tab album · O options<br>
     Touch: CROUCH toggles sneaking, pushing the stick to its edge runs
   </p>
-  <p id="build" style="font-size:12px;color:#777;margin:0;">build 17</p>
+  <p id="build" style="font-size:12px;color:#777;margin:0;">build 18</p>
   <button id="startBtn">Enter</button>
   <button id="optionsBtn" style="margin-top:0.6rem;background:#222;border-color:#555;">Options</button>
 </div>
@@ -169,6 +169,8 @@ const groundH = (x, z) => {
     Math.sin((x + z) * 0.6) * 0.2 + Math.sin(x * 1.3) * Math.cos(z * 1.1) * 0.12) * (1 - flat);
 };
 const fz = z => z > 14 ? z - 10 : z; // keep scattered clutter off the facility apron
+const NORTH_Z = -48;                  // north edge of the world
+const OUTPOST = { x: 2, z: -44 };     // the way out, at the far end of the north woods
 const EYE = 1.6;
 
 const canvas = document.createElement('canvas');
@@ -418,11 +420,13 @@ camera.position.set(0, groundH(0, 5) + EYE, 5);
 const ambient = new THREE.HemisphereLight(0x334455, 0x10160c, 0.55);
 scene.add(ambient);
 const moon = new THREE.DirectionalLight(0x8899bb, 0.45);
-moon.position.set(-31, 26.5, -22);
+moon.position.set(-31, 26.5, -38); // aimed at the middle of the long map, same angle as before
+moon.target.position.set(0, 0, -16);
+scene.add(moon.target);
 moon.castShadow = true;
 moon.shadow.mapSize.set(2048, 2048);
-moon.shadow.camera.left = moon.shadow.camera.bottom = -40;
-moon.shadow.camera.right = moon.shadow.camera.top = 40;
+moon.shadow.camera.left = moon.shadow.camera.bottom = -58;
+moon.shadow.camera.right = moon.shadow.camera.top = 58;
 moon.shadow.camera.near = 1;
 moon.shadow.camera.far = 120;
 moon.shadow.bias = -0.0004;
@@ -471,7 +475,7 @@ scene.add(camera);
 postMat.uniforms.projInv.value = camera.projectionMatrixInverse;
 postMat.uniforms.camWorld.value = camera.matrixWorld;
 postMat.uniforms.moonMatrix.value = moon.shadow.matrix;
-postMat.uniforms.moonDir.value.copy(moon.position).normalize();
+postMat.uniforms.moonDir.value.copy(moon.position).sub(moon.target.position).normalize();
 postMat.uniforms.flashCone.value.set(Math.cos(flashlight.angle), Math.cos(flashlight.angle * (1 - flashlight.penumbra)));
 
 renderer.shadowMap.enabled = true;
@@ -555,7 +559,7 @@ const pixelMat = (color, noise, size, style, extra) =>
   new THREE.MeshStandardMaterial({ map: makePixelTexture(color, noise, size, style, extra && extra.alt), flatShading: true, roughness: (extra && extra.roughness) || 1 });
 
 const groundMat = pixelMat(0x3d3324, 0.25, 32, 'mud', { alt: 0x2a3a20, roughness: 0.6 }); // leaf litter + moss, wet
-groundMat.map.repeat.set(12, 12);
+groundMat.map.repeat.set(12, 20);
 const trunkMat  = pixelMat(0x40382e, 0.3, 16, 'bark');
 trunkMat.map.repeat.set(2, 3);
 const deadMat   = pixelMat(0x857d6c, 0.25, 16, 'bark'); // bleached dead wood: catches moonlight
@@ -570,11 +574,12 @@ const worldMats = [groundMat, trunkMat, deadMat, leafMat, leafMat2, leafMat3, ro
 
 // Ground: runs past the tree ring into the dark, cut into ~1.25 unit quads
 // (terrain needs the vertices, and big polygons tear under affine texturing)
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(60, 60, 48, 48), groundMat);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(60, 100, 48, 80), groundMat);
+ground.position.z = -18; // covers z = -68 .. 32
 {
   const gp = ground.geometry.attributes.position;
   // plane is rotated -90° about X below: local (x, y, z) lands at world (x, z, -y)
-  for (let i = 0; i < gp.count; i++) gp.setZ(i, groundH(gp.getX(i), -gp.getY(i)));
+  for (let i = 0; i < gp.count; i++) gp.setZ(i, groundH(gp.getX(i), -gp.getY(i) + ground.position.z));
 }
 ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
@@ -597,6 +602,7 @@ function roughen(geo, amt) {
 //  broad – forked limbs, each carrying a lumpy crown
 //  dead  – pale broken trunk, bare limbs
 const treeColliders = [], leaves = [];
+const crowns = []; // where each tree crown sits in the world: what shades the ground from the moon
 const UP = new THREE.Vector3(0, 1, 0);
 function makeTree(x, z, s, kind) {
   const g = new THREE.Group();
@@ -642,7 +648,13 @@ function makeTree(x, z, s, kind) {
   g.position.set(x, groundH(x, z), z);
   g.rotation.set((Math.random()-0.5) * 0.14, Math.random() * 6, (Math.random()-0.5) * 0.14); // nothing grows dead straight
   scene.add(g);
-  treeColliders.push({ x, z, r: 0.5 * s });
+  treeColliders.push({ x, z, r: 0.5 * s, sight: 0.3 * s }); // sight: how wide a thing it is to see past
+  g.updateMatrixWorld(true);
+  g.children.forEach(m => {
+    if (m.geometry.type === 'CylinderGeometry') return; // trunk and limbs shade nothing worth counting
+    const w = m.getWorldPosition(new THREE.Vector3());
+    crowns.push({ x: w.x, y: w.y, z: w.z, r: m.geometry.parameters.radius * 0.9 });
+  });
 }
 const spots = [
   [-6,-4],[-5,6],[6,-7],[8,4],[-3,-9],[4,8],[-10,1],[11,-2],
@@ -653,9 +665,28 @@ for (let i = 0; i < 18; i++) {
   const a = i / 18 * Math.PI * 2, r = 15 + Math.random() * 2;
   spots.push([Math.cos(a) * r, Math.sin(a) * r]);
 }
-spots.forEach(([x,z], i) => (z > 12.5 && Math.abs(x) < 5) || makeTree(x, z, 0.8 + Math.random()*0.5, i % 6 === 4 ? 'dead' : i % 3 === 2 ? 'broad' : 'pine'));
+spots.forEach(([x,z], i) => (z > 12.5 && Math.abs(x) < 5) || (z < -13 && Math.abs(x) < 6) || makeTree(x, z, 0.8 + Math.random()*0.5, i % 6 === 4 ? 'dead' : i % 3 === 2 ? 'broad' : 'pine'));
 
 const glowLights = [redEye1, redEye2]; // skulker eyes + outpost lamp join below; glowPos holds 5
+
+// North woods: thinner, with open moonlit ground between the trees
+for (let i = 0; i < 26; i++) {
+  const x = (Math.random() - 0.5) * 33, z = -20 - Math.random() * 27;
+  if (Math.hypot(x - OUTPOST.x, z - OUTPOST.z) < 4.5 || (Math.abs(x) < 2 && z > -24)) continue;
+  makeTree(x, z, 0.8 + Math.random() * 0.5, i % 5 === 4 ? 'dead' : i % 3 === 2 ? 'broad' : 'pine');
+}
+// Boulders: big enough to stand behind
+for (let i = 0; i < 12; i++) {
+  const r = 0.9 + Math.random() * 0.8, x = (Math.random() - 0.5) * 32, z = -19 - Math.random() * 27;
+  if (Math.hypot(x - OUTPOST.x, z - OUTPOST.z) < 5) continue;
+  const b = new THREE.Mesh(roughen(new THREE.DodecahedronGeometry(r, 0), r * 0.25), rockMat);
+  b.position.set(x, groundH(x, z) + r * 0.3, z);
+  b.scale.y = 0.75;
+  b.rotation.y = Math.random() * 6;
+  b.castShadow = b.receiveShadow = true;
+  scene.add(b);
+  treeColliders.push({ x, z, r: r * 0.85, sight: r * 0.8 });
+}
 
 // Rain: streaks + ground splashes. Unlit HDR, brightest inside the flashlight beam.
 const rainMat = new THREE.ShaderMaterial({
@@ -743,10 +774,11 @@ for (let i = 0; i < 6; i++) {
 }
 // Grass tufts: one instanced draw call
 {
-  const tufts = new THREE.InstancedMesh(new THREE.ConeGeometry(0.07, 0.5, 3), grassMat, 700);
+  const tufts = new THREE.InstancedMesh(new THREE.ConeGeometry(0.07, 0.5, 3), grassMat, 1200);
   const m = new THREE.Object3D();
-  for (let i = 0; i < 700; i++) {
+  for (let i = 0; i < 1200; i++) {
     m.position.set((Math.random()-0.5)*35, 0.2, fz((Math.random()-0.5)*35));
+    if (i >= 700) m.position.z = -18 - Math.random() * 30; // the north woods
     m.position.y += groundH(m.position.x, m.position.z);
     m.rotation.set((Math.random()-0.5)*0.5, Math.random()*6, (Math.random()-0.5)*0.5);
     m.scale.setScalar(0.6 + Math.random()*0.9);
@@ -1043,7 +1075,6 @@ const CRANK_RATE = 12;              // % per second: a full wind takes over 8 s
 // further off only makes it curious: it comes over slowly to listen.
 const HOWLER = { wander: 1.2, curious: 1.7, hunt: 3.6, search: 1.3, alert: 0, trigger: 3.5, catchDist: 0.8, listen: 3, react: 1.0, grace: 14, memory: 0.9 };
 const SKULKER = { sense: 4.2, windup: 0.45, dive: 15, flee: 13, catchDist: 0.85, litRange: 15 };
-const OUTPOST = { x: 5, z: -13 };
 // Fear is distance to the nearest threat, nothing else: 100% within `full` metres, fading to 0 at `range`.
 const FEAR = { full: 1.5, range: 7, rise: 3, fall: 1.2 };
 
@@ -1052,8 +1083,9 @@ const floorMat = pixelMat(0x4a4c4e, 0.15, 8, 'mud', { alt: 0x2e2a26, roughness: 
 const doorMat  = pixelMat(0x5a3a2a, 0.25, 16, 'bark');                                  // rusted steel
 const skinMat  = pixelMat(0x9a8f88, 0.2, 8, 'leaf');                                    // howler: pale, never saw daylight
 const hideMat  = pixelMat(0x14181a, 0.3, 8, 'leaf');                                    // skulker: near black
+const tallMat  = pixelMat(0x3a3d34, 0.25, 8, 'leaf');                                   // the tall one: grey-green
 floorMat.map.repeat.set(COLS, ROWS);
-[wallMat, floorMat, doorMat, skinMat, hideMat].forEach(applyVertexSnap);
+[wallMat, floorMat, doorMat, skinMat, hideMat, tallMat].forEach(applyVertexSnap);
 const unlit = (r, g, b) => new THREE.MeshBasicMaterial({ color: new THREE.Color(r, g, b) });
 
 // ---------- facility shell
@@ -1159,12 +1191,12 @@ const lamp = new THREE.PointLight(0x9fe8b8, 2.2, 11);
   const bulb = new THREE.Mesh(new THREE.IcosahedronGeometry(0.09, 0), unlit(1.5, 3, 2));
   bulb.position.copy(lamp.position);
   scene.add(hut, lamp, bulb);
-  treeColliders.push({ x: OUTPOST.x, z: OUTPOST.z, r: 1.9 });
+  treeColliders.push({ x: OUTPOST.x, z: OUTPOST.z, r: 1.9, sight: 1.5 });
 }
 
 // ---------- where the player can stand
 function walkable(x, z) {
-  if (Math.abs(x) > 17.5 || z < -17.5) return false;
+  if (Math.abs(x) > 17.5 || z < NORTH_Z) return false;
   if (z < FAC_Z0 - 0.3) return true; // forest
   // facility: the grid decides. Rows above the map are the ground outside the front wall.
   return [[-0.3, -0.3], [0.3, -0.3], [-0.3, 0.3], [0.3, 0.3]].every(([ox, oz]) => {
@@ -1181,12 +1213,31 @@ function canStand(x, z, px, pz) {
   }
   return true;
 }
-// straight line clear of facility walls? (trees do not block sight: shortcut, add when it matters)
+// Straight line clear? Facility walls block it, and so do tree trunks, boulders and the outpost.
+// Nothing here is a "hiding spot": standing behind something simply breaks the line.
 function los(ax, az, bx, bz) {
-  const n = Math.ceil(Math.hypot(bx - ax, bz - az) / 0.3);
+  const dx = bx - ax, dz = bz - az, len = Math.hypot(dx, dz), n = Math.ceil(len / 0.3);
   for (let i = 1; i < n; i++) {
-    const [r, c] = cellOf(ax + (bx - ax) * i / n, az + (bz - az) * i / n);
+    const [r, c] = cellOf(ax + dx * i / n, az + dz * i / n);
     if (r >= 0 && r < ROWS && !isOpen(r, c)) return false;
+  }
+  for (const c of treeColliders) {
+    if (!c.sight) continue;
+    const t = Math.max(0, Math.min(1, ((c.x - ax) * dx + (c.z - az) * dz) / (len * len || 1)));
+    const ex = ax + dx * t - c.x, ez = az + dz * t - c.z;
+    if (ex * ex + ez * ez < c.sight * c.sight) return false;
+  }
+  return true;
+}
+// Is this spot in moonlight? Follows the same crowns that cast the shadows you can see.
+function inMoonlight(x, z) {
+  if (z >= FAC_Z0) return false;
+  const m = postMat.uniforms.moonDir.value, y0 = groundH(x, z) + 1.2;
+  for (const c of crowns) {
+    const t = (c.y - y0) / m.y;
+    if (t <= 0) continue;
+    const ex = x + m.x * t - c.x, ez = z + m.z * t - c.z;
+    if (ex * ex + ez * ez < c.r * c.r) return false;
   }
   return true;
 }
@@ -1318,7 +1369,9 @@ const EVIDENCE = [
   { id: 'skulker', name: 'the one that waits', range: 12, pos: () => nearestSkulker(),
     caption: 'It was in the dark at the foot of a tree, watching. The flash sent it running.' },
   { id: 'breach',  name: 'the breached pen',   range: 7,  pos: () => [pen.position.x, pen.position.z],
-    caption: 'The bars are bent outward. Nothing let them out. They let themselves out.' }
+    caption: 'The bars are bent outward. Nothing let them out. They let themselves out.' },
+  { id: 'leaper',  name: 'the tall one',       range: 16, pos: () => [leaper.x, leaper.z],
+    caption: 'Taller than a man, upright on two legs. Its eyes threw the flash straight back. It came at the light.' }
 ];
 function inView(x, z, range) {
   const dx = x - camera.position.x, dz = z - camera.position.z, d = Math.hypot(dx, dz);
@@ -1338,6 +1391,7 @@ function takePhoto() {
   shotEl.style.transition = 'opacity 0.4s'; shotEl.style.opacity = 0;
   tone(1400, 200, 0.08, 'square', 0.15);
   makeNoise(camera.position.x, camera.position.z, NOISE_SHUTTER);
+  leaperLight(camera.position.x, camera.position.z, 30); // a flash carries a long way
   const got = EVIDENCE.filter(e => !game.evidence.has(e.id) && inView(...e.pos(), e.range));
   got.forEach(e => game.evidence.add(e.id));
   if (got.length) pendingShot = got; // the next rendered frame, lit by the flash, becomes the photograph
@@ -1511,7 +1565,8 @@ function skulkerFlee(s, px, pz) {
 function updateSkulker(s, dt, px, pz) {
   const dx = px - s.x, dz = pz - s.z, d = Math.hypot(dx, dz);
   // lit = inside the torch beam, or caught by the camera flash
-  const beam = flashlight.intensity > 0 && d < SKULKER.litRange && -(dx * beamDir.x + dz * beamDir.z) / (d || 1) > Math.cos(flashlight.angle);
+  const beam = flashlight.intensity > 0 && d < SKULKER.litRange && -(dx * beamDir.x + dz * beamDir.z) / (d || 1) > Math.cos(flashlight.angle)
+    && los(px, pz, s.x, s.z); // a trunk in the way and the beam does not reach it
   const lit = beam || (game.flashT > 0 && inView(s.x, s.z, 14));
   if (s.state === 'hide') {
     s.face = Math.atan2(dx, dz); // it watches you
@@ -1546,6 +1601,97 @@ function updateSkulker(s, dt, px, pz) {
   s.g.rotation.y = s.face;
 }
 
+// ---------- the tall one: upright, thin, hunts light and whatever the light falls on
+// (working name in code: "leaper". The blind facility creature already holds the name "howler".)
+// It sees a lit torch from far off. Without one it sees you only in moonlight or lamplight, and
+// less well if you crouch. In shadow it must nearly walk into you. Trunks and boulders block its view.
+const LEAPER = { walk: 1.6, leap: 5.5, air: 0.45, crouch: 0.55, catchDist: 1.2, memory: 0.8, search: 5,
+  torchRange: 26, moonRange: 9, crouchRange: 5, darkRange: 2.2, home: [-6, -36] };
+const leaper = { g: new THREE.Group(), x: 0, z: 0, y: 0, face: 0, state: 'roam', t: 0, tx: 0, tz: 0, fx: 0, fz: 0, lx: 0, lz: 0,
+  seenT: -9, howlT: 6, eyeMat: unlit(1.3, 1.5, 1.7) };
+{
+  const part = (geo, mat, x, y, z, rx = 0) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z); m.rotation.x = rx;
+    m.castShadow = mat !== leaper.eyeMat;
+    leaper.g.add(m);
+    return m;
+  };
+  part(new THREE.CylinderGeometry(0.1, 0.13, 1.0, 6), tallMat, 0, 1.8, 0.1, 0.25);            // narrow torso, leaning in
+  part(new THREE.CylinderGeometry(0.04, 0.06, 0.55, 5), tallMat, 0, 2.45, 0.32, 0.5);         // long neck
+  part(new THREE.IcosahedronGeometry(0.15, 1), tallMat, 0, 2.74, 0.5).scale.set(0.8, 0.9, 1.5); // small head
+  part(new THREE.ConeGeometry(0.07, 1.5, 5), tallMat, 0, 1.4, -0.8, -1.9);                    // thin tail, for balance
+  [-1, 1].forEach(sd => {
+    part(new THREE.CylinderGeometry(0.05, 0.07, 1.4, 5), tallMat, sd * 0.14, 0.7, 0, 0.08);   // long hind legs
+    part(new THREE.CylinderGeometry(0.025, 0.035, 1.1, 4), tallMat, sd * 0.2, 1.72, 0.25, 0.35); // arms hang forward
+    part(new THREE.IcosahedronGeometry(0.045, 0), leaper.eyeMat, sd * 0.075, 2.78, 0.66);     // eyes that throw light back
+  });
+  scene.add(leaper.g);
+}
+// its call: long, falling, breaking up as it dies away
+function decayedHowl(d) {
+  const v = 0.45 * near(d * 0.5), pan = panOf(leaper.x, leaper.z);
+  tone(560, 150, 1.9, 'sawtooth', v * 0.6, pan);
+  tone(588, 138, 2.3, 'triangle', v, pan);
+  setTimeout(() => tone(240, 90, 1.4, 'sawtooth', v * 0.35, pan), 900);
+}
+function leaperSees(px, pz, d) {
+  if (pz >= FAC_Z0 - 0.5) return false;        // never indoors
+  if (d < LEAPER.darkRange) return true;        // close enough to walk into you
+  const lit = inMoonlight(px, pz) || Math.hypot(px - lamp.position.x, pz - lamp.position.z) < 5;
+  const range = flashlight.intensity > 0 ? LEAPER.torchRange : lit ? (game.crouched ? LEAPER.crouchRange : LEAPER.moonRange) : 0;
+  return d < range && los(leaper.x, leaper.z, px, pz);
+}
+// something bright at (x, z): it comes
+function leaperLight(x, z, range) {
+  if (z >= FAC_Z0 - 0.5 || Math.hypot(leaper.x - x, leaper.z - z) > range) return;
+  leaper.seenT = clock.elapsedTime;
+  leaper.tx = Math.max(-17, Math.min(17, x));
+  leaper.tz = Math.max(NORTH_Z + 0.5, Math.min(FAC_Z0 - 1.5, z));
+  if (leaper.state === 'roam' || leaper.state === 'search') {
+    leaper.state = 'crouch';
+    leaper.t = LEAPER.crouch + 0.5; // a beat longer the first time: it howls, then comes
+    decayedHowl(Math.hypot(leaper.x - x, leaper.z - z));
+  }
+}
+function updateLeaper(dt, px, pz) {
+  const L = leaper, now = clock.elapsedTime, d = Math.hypot(px - L.x, pz - L.z);
+  if (leaperSees(px, pz, d)) leaperLight(px, pz, Infinity);
+  if (d < LEAPER.catchDist && now - L.seenT < LEAPER.memory) return caught();
+  if ((L.howlT -= dt) <= 0) { L.howlT = 9 + Math.random() * 6; if (L.state === 'roam') decayedHowl(d); }
+  if (L.state === 'roam') {
+    const gx = L.tx - L.x, gz = L.tz - L.z, gd = Math.hypot(gx, gz), step = LEAPER.walk * dt;
+    if (gd <= step) { L.tx = (Math.random() - 0.5) * 30; L.tz = -20 - Math.random() * 26; } // next place to wander to
+    else { L.x += gx / gd * step; L.z += gz / gd * step; L.face = Math.atan2(gx, gz); }
+  } else if (L.state === 'crouch') {
+    L.face = Math.atan2(L.tx - L.x, L.tz - L.z);
+    if ((L.t -= dt) <= 0) { // spring
+      const gx = L.tx - L.x, gz = L.tz - L.z, gd = Math.hypot(gx, gz) || 1, hop = Math.min(LEAPER.leap, gd);
+      L.fx = L.x; L.fz = L.z; L.lx = L.x + gx / gd * hop; L.lz = L.z + gz / gd * hop;
+      L.state = 'air'; L.t = 0;
+    }
+  } else if (L.state === 'air') {
+    const k = Math.min(1, (L.t += dt) / LEAPER.air);
+    L.x = L.fx + (L.lx - L.fx) * k; L.z = L.fz + (L.lz - L.fz) * k; L.y = Math.sin(k * Math.PI) * 1.6;
+    if (k >= 1) { // lands
+      L.y = 0;
+      tone(70, 40, 0.15, 'sine', 0.35 * near(d), panOf(L.x, L.z));
+      const there = Math.hypot(L.tx - L.x, L.tz - L.z) < 0.6;
+      if (there && now - L.seenT > LEAPER.memory) { L.state = 'search'; L.t = LEAPER.search; } // the light is gone: it looks about
+      else { L.state = 'crouch'; L.t = LEAPER.crouch; }
+    }
+  } else if ((L.t -= dt) <= 0) { // search over
+    L.state = 'roam';
+    L.tx = L.x; L.tz = L.z;
+  }
+  const squat = L.state === 'crouch' ? 0.72 : 1;
+  L.g.scale.y += (squat - L.g.scale.y) * Math.min(1, dt * 12);
+  L.g.position.set(L.x, groundH(L.x, L.z) + L.y + (L.state === 'roam' ? Math.abs(Math.sin(now * 4)) * 0.05 : 0), L.z);
+  let turn = L.face + (L.state === 'search' ? Math.sin(now * 1.3) * 1.2 : 0) - L.g.rotation.y;
+  turn = Math.atan2(Math.sin(turn), Math.cos(turn));
+  L.g.rotation.y += turn * Math.min(1, dt * 7);
+}
+
 // ---------- caught, reload, win
 function caught() {
   if (game.dead) return;
@@ -1574,13 +1720,14 @@ function resetGame() {
   album.length = 0; pendingShot = null; albumOpen = false; albumView.style.display = 'none';
   howler.g.position.set(howler.x, 0, howler.z);
   skulkers.forEach(s => { s.at = s.home; [s.x, s.z] = DARK[s.home]; s.state = 'hide'; });
+  Object.assign(leaper, { x: LEAPER.home[0], z: LEAPER.home[1], y: 0, tx: LEAPER.home[0], tz: LEAPER.home[1], state: 'roam', seenT: -9, howlT: 6 });
   applyBright();
 }
 function win() {
   game.won = true;
   if (controls.isLocked) controls.unlock();
   overlay.style.display = 'none';
-  noteText.textContent = `Outpost 2. The keycard works. The door seals behind you.\n\nDEMO COMPLETE\nEvidence recorded: ${game.evidence.size}/3`;
+  noteText.textContent = `Outpost 2. The keycard works. The door seals behind you.\n\nDEMO COMPLETE\nEvidence recorded: ${game.evidence.size}/${EVIDENCE.length}`;
   document.getElementById('noteClose').textContent = 'Play again';
   noteView.style.display = 'flex';
 }
@@ -1615,6 +1762,7 @@ function updateGame(dt, live, active) {
     const fearAt = d => Math.max(0, Math.min(1, 1 - (d - FEAR.full) / (FEAR.range - FEAR.full)));
     threat = fearAt(Math.hypot(px - howler.x, pz - howler.z));
     for (const s of skulkers) if (s.state !== 'hide') threat = Math.max(threat, fearAt(Math.hypot(px - s.x, pz - s.z)));
+    threat = Math.max(threat, fearAt(Math.hypot(px - leaper.x, pz - leaper.z)));
   }
   threat = Math.max(threat, +document.getElementById('optFear').value); // Options > Fear test holds it on
   game.threat += (threat - game.threat) * Math.min(1, dt * (threat > game.threat ? FEAR.rise : FEAR.fall)); // quick to rise, slow to settle
@@ -1624,10 +1772,11 @@ function updateGame(dt, live, active) {
   if (!live) return; // paused, dead or finished: the creatures hold still
   updateHowler(dt, px, pz);
   skulkers.forEach(s => updateSkulker(s, dt, px, pz));
+  if (!game.dead) updateLeaper(dt, px, pz);
   if (!game.dead && Math.hypot(px - OUTPOST.x, pz - (OUTPOST.z + 1.9)) < 1.4) win();
 }
 resetGame();
-window.demo = { game, camera, howler, skulkers, items, DARK, OUTPOST, cellCenter, findCell, makeNoise, takePhoto, interact, howlerHear,
+window.demo = { leaper, LEAPER, inMoonlight, los, setOpt, game, camera, howler, skulkers, items, DARK, OUTPOST, cellCenter, findCell, makeNoise, takePhoto, interact, howlerHear,
   album, get torchOn() { return flashlightOn; }, get fearVol() { return fearGain ? fearGain.gain.value : 0; }, get grain() { return postMat.uniforms.noiseAmount.value; },
   get battery() { return battery; }, get crouch() { return mobileCrouch; }, set battery(v) { battery = v; } }; // handle for tests and tuning
 
@@ -1716,6 +1865,7 @@ function animate() {
   }
   game.running = moved && mode === 'run';
   const crouched = active && mode === 'sneak';
+  game.crouched = crouched;
   eyeH += ((crouched ? 1.05 : EYE) - eyeH) * Math.min(1, dt * 8);
 
   // Head bob (one dip per footstep) + lean into strafes
@@ -1739,17 +1889,18 @@ function animate() {
   updateGame(dt, live, active);
 
   // Rain streaks; each one that lands leaves a short splash
+  rain.position.z = Math.min(camera.position.z, 0); // the rain box travels north with you
   const rpos = rain.geometry.attributes.position.array;
   for (let i = 0; i < splashCount; i++) {
     if (splashLife[i] > 0 && (splashLife[i] -= dt) <= 0) splashPos[i*3+1] = -10;
   }
   for (let i = 0; i < rainCount; i++) {
     rpos[i*6+1] -= dt * 14;
-    const floorY = groundH(rpos[i*6], rpos[i*6+2]);
+    const floorY = groundH(rpos[i*6], rpos[i*6+2] + rain.position.z);
     if (rpos[i*6+1] < floorY) {
       splashPos[splashNext*3] = rpos[i*6];
       splashPos[splashNext*3+1] = floorY + 0.04;
-      splashPos[splashNext*3+2] = rpos[i*6+2];
+      splashPos[splashNext*3+2] = rpos[i*6+2] + rain.position.z;
       splashLife[splashNext] = 0.12;
       splashNext = (splashNext + 1) % splashCount;
       rpos[i*6+1] = RAIN_TOP;
