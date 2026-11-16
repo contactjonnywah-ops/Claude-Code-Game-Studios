@@ -345,6 +345,11 @@ const postMat = new THREE.ShaderMaterial({
       else if (grade == 1) col *= vec3(1.05, 0.95, 0.8); // warm torch
       else col = mix(col, vec3(dot(col, vec3(0.3, 0.5, 0.2))), 0.45); // panic
 
+      // Animated noise, stronger in darkness
+      float dark = 1.0 - flashOn * 0.6;
+      col += (rand(px * 0.5) - 0.5) * noiseAmount * 0.12 * (0.6 + dark);
+      col = max(col, 0.0);
+
       float luma = dot(col, vec3(0.299, 0.587, 0.114));
       // Dim light loses its colour, as it does to the eye. Without this, faint red spill
       // from the point lights dithers into red speckle on everything nearby.
@@ -354,10 +359,6 @@ const postMat = new THREE.ShaderMaterial({
       // Vignette: heavier on a weak torch, and it closes in under threat
       float vigStrength = 0.65 + (1.0 - battery) * 0.35 + threat * 0.45;
       col *= max(0.0, 1.0 - smoothstep(0.2 - threat * 0.1, 0.95 - threat * 0.22, length(uv)) * vigStrength);
-
-      // Animated noise, stronger in darkness
-      float dark = 1.0 - flashOn * 0.6;
-      col += (rand(px * 0.5) - 0.5) * noiseAmount * 0.12 * (0.6 + dark);
 
       // Bit-crush last, so nothing above smooths it back out
       float d = 0.0;
@@ -1206,7 +1207,7 @@ function panOf(x, z) {
   return Math.max(-1, Math.min(1, (dx * -camFwd.z + dz * camFwd.x) / d)) * 0.9;
 }
 // Rain and wind: one looped noise buffer through two filters. Indoors the rain is a dull drum on the roof.
-let rainGain = null, rainFilter = null, windGain = null;
+let rainGain = null, rainFilter = null, windGain = null, fearGain = null;
 function initAmbience() {
   const len = audioCtx.sampleRate * 2, buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate), data = buf.getChannelData(0);
   for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
@@ -1217,6 +1218,9 @@ function initAmbience() {
   const windFilter = audioCtx.createBiquadFilter(); windFilter.type = 'lowpass'; windFilter.frequency.value = 260;
   windGain = audioCtx.createGain(); windGain.gain.value = 0;
   loop().connect(windFilter).connect(windGain).connect(audioCtx.destination);
+  const fearFilter = audioCtx.createBiquadFilter(); fearFilter.type = 'highpass'; fearFilter.frequency.value = 6000;
+  fearGain = audioCtx.createGain(); fearGain.gain.value = 0;
+  loop().connect(fearFilter).connect(fearGain).connect(audioCtx.destination);
 }
 function updateAmbience(inside, threat, dt) {
   if (!rainGain) return;
@@ -1224,6 +1228,7 @@ function updateAmbience(inside, threat, dt) {
   rainGain.gain.setTargetAtTime(inside ? 0.03 : 0.1, t, 0.4);
   rainFilter.frequency.setTargetAtTime(inside ? 450 : 2600, t, 0.4);
   windGain.gain.setTargetAtTime((inside ? 0.03 : 0.1) * (0.6 + 0.4 * Math.sin(clock.elapsedTime * 0.3)), t, 0.5);
+  fearGain.gain.setTargetAtTime(threat * threat * 0.16, t, 0.15); // the player's fear: silent when calm, loud when it is on you
   // heartbeat: yours, faster and louder the closer the danger
   if (threat > 0.15 && (game.beat -= dt) <= 0) {
     game.beat = 1.1 - 0.65 * threat;
@@ -1358,8 +1363,9 @@ function toggleAlbum() {
     albumGrid.append(fig);
   });
   if (game.readNote) albumGrid.append(add('figure', NOTE_TEXT, 'note'));
-  albumGrid.append(add('p', isMobile ? 'Tap ALBUM to close' : 'Tab to close'));
+  albumGrid.append(add('p', isMobile ? 'Tap anywhere to close' : 'Tab to close'));
 }
+albumView.addEventListener('click', () => { if (albumOpen) toggleAlbum(); }); // a scroll drag is not a click
 
 // ---------- the howler: blind, big, hunts sound through the facility
 const howler = { g: new THREE.Group(), x: 0, z: 0, face: 0, state: 'wander', path: [], point: null, wait: 0, click: 0 };
@@ -1609,7 +1615,7 @@ function updateGame(dt, live, active) {
 }
 resetGame();
 window.demo = { game, camera, howler, skulkers, items, DARK, OUTPOST, cellCenter, findCell, makeNoise, takePhoto, interact, howlerHear,
-  album, get torchOn() { return flashlightOn; },
+  album, get torchOn() { return flashlightOn; }, get fearVol() { return fearGain ? fearGain.gain.value : 0; }, get grain() { return postMat.uniforms.noiseAmount.value; },
   get battery() { return battery; }, get crouch() { return mobileCrouch; }, set battery(v) { battery = v; } }; // handle for tests and tuning
 
 function animate() {
@@ -1635,8 +1641,8 @@ function animate() {
   scene.fog.density = fogDensity * (1 + Math.sin(clock.elapsedTime * 0.15) * 0.2);
   postMat.uniforms.volDensity.value = scene.fog.density;
 
-  // Noise stays at the slider value (the old threat / low-battery pulse read as a glitch)
-  postMat.uniforms.noiseAmount.value = +noiseEl.value;
+  // Noise: the slider sets the floor. Fear raises it smoothly with how close the danger is (no pulsing).
+  postMat.uniforms.noiseAmount.value = +noiseEl.value + game.threat * 0.9; // fear adds grain on top of the slider
 
   // Lightning flash
   lightning -= dt;
