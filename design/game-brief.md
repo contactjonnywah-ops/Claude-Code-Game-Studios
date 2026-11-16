@@ -43,6 +43,20 @@ After play: It's very difficult. I get caught every time, even when standing sti
 
 After play: The demo is pretty fun and tense to play. However you need a croch button to sneak. The howler runs straight to you if any sort of movement or sound is made. There should be a trigger radius around the howler for it to run straight to the source of the sound.
 
+> While this is a survival game, I want it be immersive and intuitive. I don't want the HUD covered in meters and buttons.
+>
+> The player can hide in dark areas to avoid creatures that rely on sight. The player doesn't get a HUD display to show them that they're in darkness, they must use their own logic. The same applies for sneaking and noise.
+
+> Also, with the threat cue, depending on how close the danger is, a fuzzy high pitched white noise sound will play, increasing in volume comparitive to distance. As well as the visual noise will increase. This is is represent the fear from the player.
+
+> Add some extra elements to the fear. Jagged scanlines, slight vignetting and head swaying
+
+> Also, add decreasing saturation using the same logic.
+
+> When the threat is directly close to the player, the fear slider should be at 100.
+>
+> When the threat moves away from the player, the fear slider gradually drops back to zero, dependant on distance.
+
 **Pitch:** You are the last scientist alive on an island of escaped dinosaurs, armed only with a torch and a camera, and the proof you need is standing next to the thing that will kill you.
 
 **Genre:** First-person stealth survival horror, no combat.
@@ -51,13 +65,13 @@ After play: The demo is pretty fun and tense to play. However you need a croch b
 
 **Question:** Is it tense and fun to creep close enough to a creature to photograph it, with no way to fight back?
 
-**Hooks:** The camera is your only tool and your objective: a clear shot means being close, lit and exposed. Your torch is hand-cranked: light costs you time and noise, and the creatures hear it.
+**Hooks:** The camera is your only tool and your objective: a clear shot means being close, lit and exposed. Your torch is hand-cranked: light costs you time and noise, and the creatures hear it. The screen carries no meters: you read your light, your noise and your danger from the world, and your own fear distorts what you see and hear.
 
 **Intent:** staged failure: caught means reload at the last outpost, progress since the save is lost *(you said)* · open world with gated areas *(you said)*
 
 ## Look and references
 
-- Look: bit-crushed low-res 3D with modern light. Night jungle, volumetric fog, moon shafts, one hand-cranked torch. Facility interiors under red emergency lighting. Creatures are mostly silhouette and eyes at fog's edge. (From the visual prototype.)
+- Look: bit-crushed low-res 3D with modern light. Night jungle, volumetric fog, moon shafts, one hand-cranked torch. Facility interiors under red emergency lighting. Creatures are mostly silhouette and eyes at fog's edge. No HUD meters: the torch beam weakens as its charge drops, and fear shows in the picture itself. (From the visual prototype.)
 - References: none named yet.
 - View: 3D · Camera: first person.
 
@@ -86,9 +100,10 @@ The first creature encounter comes within three to five minutes. Sound and light
 
 - [x] First-person movement with crouch, sprint and noise
 - [x] Crank-wound dynamo torch: slow to charge, noisy to wind, drains in use
-- [x] Camera: frame, shoot, and a judged evidence log
+- [x] Camera: frame, shoot, and an album of the photographs you took
 - [x] Creatures that hunt differently, in several types (howler and skulker built)
-- [ ] Hiding spots and line-of-sight breaking
+- [x] Fear: set by distance to the nearest threat, shown as hiss, heartbeat, grain, torn scanlines, vignette, fading colour and head sway
+- [ ] Hiding spots and line-of-sight breaking, including darkness against creatures that hunt by sight
 - [ ] Notes and voiced recordings that tell the story (one written note built)
 - [ ] Outposts: small safe facility buildings, each opened by a puzzle or a collected item, where you save (thin stand-in)
 
@@ -99,6 +114,8 @@ The first creature encounter comes within three to five minutes. Sound and light
 - run and hide from creatures · in the slice
 - crank-wound dynamo torch · in the slice
 - many creature types · in the slice
+- fear from how close the danger is · in the slice
+- hiding in darkness from creatures that rely on sight · later
 - outposts as save points, opened by puzzle or collecting · thin stand-in
 - finding a way off the island · later
 
@@ -112,6 +129,8 @@ The first creature encounter comes within three to five minutes. Sound and light
 - No multiplayer.
 - No crafting.
 - No skill trees.
+- No HUD covered in meters and buttons.
+- No on-screen indicator for being in darkness, for sneaking or for noise. The player uses their own logic.
 
 ## Out of scope
 
@@ -142,5 +161,8 @@ Decisions confirmed in conversation (2026-11-16):
 - Collected key items are a simple list of what you hold, not an inventory to manage.
 - The howler catches only a player it heard a moment ago; silent and still is safe.
 - The howler has a trigger radius: close sounds make it charge, distant ones make it curious.
+- Fear is 100% within 1.5 m of a threat and fades evenly to zero at 7 m. A skulker still hidden gives no fear.
+- Touch buttons are allowed, but each appears only once it can be used.
+- Neither demo creature hunts by sight, so hiding in darkness is not built yet.
 Playable demo: prototypes/ps1-jungle/index.html
 -->
