@@ -78,7 +78,7 @@
     hold R wind torch · left click photograph · Tab album · O options<br>
     Touch: CROUCH toggles sneaking, pushing the stick to its edge runs
   </p>
-  <p id="build" style="font-size:12px;color:#777;margin:0;">build 16</p>
+  <p id="build" style="font-size:12px;color:#777;margin:0;">build 17</p>
   <button id="startBtn">Enter</button>
   <button id="optionsBtn" style="margin-top:0.6rem;background:#222;border-color:#555;">Options</button>
 </div>
@@ -1044,6 +1044,8 @@ const CRANK_RATE = 12;              // % per second: a full wind takes over 8 s
 const HOWLER = { wander: 1.2, curious: 1.7, hunt: 3.6, search: 1.3, alert: 0, trigger: 3.5, catchDist: 0.8, listen: 3, react: 1.0, grace: 14, memory: 0.9 };
 const SKULKER = { sense: 4.2, windup: 0.45, dive: 15, flee: 13, catchDist: 0.85, litRange: 15 };
 const OUTPOST = { x: 5, z: -13 };
+// Fear is distance to the nearest threat, nothing else: 100% within `full` metres, fading to 0 at `range`.
+const FEAR = { full: 1.5, range: 7, rise: 3, fall: 1.2 };
 
 const wallMat  = pixelMat(0x6a6c68, 0.18, 16, 'rock');                                  // stained concrete
 const floorMat = pixelMat(0x4a4c4e, 0.15, 8, 'mud', { alt: 0x2e2a26, roughness: 0.5 }); // wet tile
@@ -1606,15 +1608,16 @@ function updateGame(dt, live, active) {
   document.body.classList.toggle('has-cam', game.hasCamera);
   document.body.classList.toggle('near-item', !!it);
 
-  // Threat: only from something that is actually after you. A skulker still hidden gives nothing away.
+  // Fear: set by how close the nearest threat is. The howler always counts. A skulker counts
+  // only once it has shown itself: one still hidden gives nothing away.
   let threat = 0;
   if (live) {
-    const hd = Math.hypot(px - howler.x, pz - howler.z);
-    threat = { hunt: 1, alert: 1, curious: 0.6, wander: 0.35 }[howler.state] * Math.max(0, 1 - hd / (howler.state === 'wander' ? 4 : 10));
-    if (skulkers.some(s => s.state === 'windup' || s.state === 'dive')) threat = 1;
+    const fearAt = d => Math.max(0, Math.min(1, 1 - (d - FEAR.full) / (FEAR.range - FEAR.full)));
+    threat = fearAt(Math.hypot(px - howler.x, pz - howler.z));
+    for (const s of skulkers) if (s.state !== 'hide') threat = Math.max(threat, fearAt(Math.hypot(px - s.x, pz - s.z)));
   }
   threat = Math.max(threat, +document.getElementById('optFear').value); // Options > Fear test holds it on
-  game.threat += (threat - game.threat) * Math.min(1, dt * 3);
+  game.threat += (threat - game.threat) * Math.min(1, dt * (threat > game.threat ? FEAR.rise : FEAR.fall)); // quick to rise, slow to settle
   postMat.uniforms.threat.value = game.threat;
   updateAmbience(pz >= FAC_Z0, live ? game.threat : 0, dt);
 
