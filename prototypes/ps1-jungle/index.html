@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>PS1 Bit-Crushed Jungle – Three.js</title>
 <style>
   body { margin: 0; overflow: hidden; background: #000; font-family: monospace; color: #ccc; }
@@ -33,8 +34,16 @@
   #btnAudio { bottom: 80px; right: 24px; }
   #btnBrightUp, #btnBrightDown { width: 46px; height: 46px; font-size: 20px; font-weight: bold; }
   #btnBrightUp { top: 24px; right: 24px; }
-  #btnBrightDown { top: 80px; right: 24px; }
+  #btnBrightDown { top: 24px; right: 82px; } /* beside +, not under it: clear of FLASH on short landscape screens */
   body.mobile #mobileControls { display: block; }
+  /* Options: one row per setting, finger-sized targets, scrolls when taller than the screen */
+  #options { overflow-y: auto; padding: 16px; box-sizing: border-box; }
+  #optList { display: grid; gap: 4px; width: min(100%, 440px); }
+  #optList label { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; font-size: 16px; text-align: left; }
+  #optList select, #optList input[type=range] { width: 58%; height: 44px; font-size: 16px; margin: 0; }
+  #optList select { background: #222; color: #fff; border: 1px solid #666; }
+  #optList input[type=checkbox] { width: 28px; height: 28px; margin: 0; }
+  #overlay button, #optionsClose { min-height: 48px; min-width: 160px; font-size: 16px; font-family: inherit; }
 </style>
 </head>
 <body>
@@ -48,25 +57,25 @@
   <button id="startBtn">Enter</button>
   <button id="optionsBtn" style="margin-top:0.6rem;background:#222;border-color:#555;">Options</button>
 </div>
-<div id="options" style="display:none;position:absolute;inset:0;background:rgba(0,0,0,0.85);z-index:20;flex-direction:column;align-items:center;justify-content:center;text-align:center;">
-  <h2 style="color:#8b4513;margin:0 0 1rem;">Options</h2>
-  <div style="line-height:2.2;">
-    Resolution: <select id="optRes"><option value="80">80×60</option><option value="160" selected>160×120</option><option value="240">240×180</option></select><br>
-    Dither: <select id="optDither"><option value="0">None</option><option value="1" selected>Bayer 4×4</option><option value="2">Bayer 8×8</option><option value="3">Noise</option></select><br>
-    Noise: <input id="optNoise" type="range" min="0" max="0.5" step="0.01" value="0.22"><br>
-    Chroma: <input id="optChroma" type="range" min="0" max="0.015" step="0.001" value="0.004"><br>
-    Scanlines: <input id="optScan" type="range" min="0" max="0.4" step="0.01" value="0.06"><br>
-    Color Crush: <input id="optCrush" type="range" min="3" max="32" step="1" value="14"><br>
-    Grade: <select id="optGrade"><option value="0">Cold Moon</option><option value="1" selected>Warm Torch</option><option value="2">Panic</option></select><br>
-    Preset: <select id="optPreset"><option value="custom">Custom</option><option value="night">Night</option><option value="storm">Storm</option><option value="panic">Panic</option></select><br>
-    Letterbox: <input id="optLetter" type="checkbox"><br>
-    Sensitivity: <input id="optSens" type="range" min="0.5" max="2" step="0.1" value="1"><br>
-    Vertex Snap: <input id="optSnap" type="checkbox" checked><br>
-    Brightness: <input id="optBright" type="range" min="0.25" max="2.8" step="0.05" value="1"><br>
-    Gamma: <input id="optGamma" type="range" min="1.4" max="3" step="0.05" value="2.2"><br>
-    Contrast: <input id="optContrast" type="range" min="0.5" max="1.6" step="0.05" value="1">
+<div id="options" style="display:none;position:absolute;inset:0;background:rgba(0,0,0,0.85);z-index:20;flex-direction:column;align-items:center;text-align:center;">
+  <h2 style="color:#8b4513;margin:auto 0 1rem;">Options</h2>
+  <div id="optList">
+    <label><span>Resolution</span><select id="optRes"><option value="80">80×60</option><option value="160" selected>160×120</option><option value="240">240×180</option></select></label>
+    <label><span>Dither</span><select id="optDither"><option value="0">None</option><option value="1" selected>Bayer 4×4</option><option value="2">Bayer 8×8</option><option value="3">Noise</option></select></label>
+    <label><span>Noise</span><input id="optNoise" type="range" min="0" max="0.5" step="0.01" value="0.22"></label>
+    <label><span>Chroma</span><input id="optChroma" type="range" min="0" max="0.015" step="0.001" value="0.004"></label>
+    <label><span>Scanlines</span><input id="optScan" type="range" min="0" max="0.4" step="0.01" value="0.06"></label>
+    <label><span>Color Crush</span><input id="optCrush" type="range" min="3" max="32" step="1" value="14"></label>
+    <label><span>Grade</span><select id="optGrade"><option value="0">Cold Moon</option><option value="1" selected>Warm Torch</option><option value="2">Panic</option></select></label>
+    <label><span>Preset</span><select id="optPreset"><option value="custom">Custom</option><option value="night">Night</option><option value="storm">Storm</option><option value="panic">Panic</option></select></label>
+    <label><span>Letterbox</span><input id="optLetter" type="checkbox"></label>
+    <label><span>Sensitivity</span><input id="optSens" type="range" min="0.5" max="2" step="0.1" value="1"></label>
+    <label><span>Vertex Snap</span><input id="optSnap" type="checkbox" checked></label>
+    <label><span>Brightness</span><input id="optBright" type="range" min="0.25" max="2.8" step="0.05" value="1"></label>
+    <label><span>Gamma</span><input id="optGamma" type="range" min="1.4" max="3" step="0.05" value="2.2"></label>
+    <label><span>Contrast</span><input id="optContrast" type="range" min="0.5" max="1.6" step="0.05" value="1"></label>
   </div>
-  <button id="optionsClose" style="margin-top:1.2rem;padding:0.6rem 1.2rem;background:#3a2010;color:#fff;border:1px solid #8b4513;">Close</button>
+  <button id="optionsClose" style="margin:1.2rem 0 auto;padding:0.6rem 1.2rem;background:#3a2010;color:#fff;border:1px solid #8b4513;flex-shrink:0;">Close</button>
 </div>
 <div id="letterbox" style="display:none;position:absolute;inset:0;pointer-events:none;z-index:4;">
   <div style="position:absolute;top:0;left:0;right:0;height:8%;background:#000;"></div>
