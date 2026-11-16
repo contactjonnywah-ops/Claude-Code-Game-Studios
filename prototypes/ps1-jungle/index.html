@@ -1,0 +1,1052 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PS1 Bit-Crushed Jungle – Three.js</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #000; font-family: monospace; color: #ccc; }
+  canvas { image-rendering: pixelated; image-rendering: crisp-edges; display: block; }
+  #overlay {
+    position: absolute; inset: 0; background: rgba(0,0,0,0.8);
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column; text-align: center; z-index: 10;
+  }
+  #overlay h1 { color: #8b4513; font-size: 2rem; margin: 0 0 1rem; }
+  #overlay p { max-width: 460px; line-height: 1.5; }
+  #overlay button {
+    margin-top: 1.2rem; padding: 0.7rem 1.4rem; font-size: 1rem;
+    background: #3a2010; color: #fff; border: 1px solid #8b4513; cursor: pointer;
+  }
+  #hud { position: absolute; bottom: 10px; left: 10px; font-size: 13px; pointer-events: none; text-shadow: 1px 1px 2px #000; }
+  #brightnessLabel { position: absolute; top: 10px; left: 10px; font-size: 13px; pointer-events: none; text-shadow: 1px 1px 2px #000; }
+  #crosshair { position: absolute; top: 50%; left: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; background: #fff; opacity: 0.5; pointer-events: none; display: none; }
+  #mobileControls { display: none; position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+  #joystick { position: absolute; bottom: 30px; left: 30px; width: 110px; height: 110px; background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.25); border-radius: 50%; pointer-events: auto; touch-action: none; }
+  #joystickKnob { position: absolute; width: 44px; height: 44px; background: rgba(255,255,255,0.4); border-radius: 50%; left: 33px; top: 33px; pointer-events: none; }
+  #lookZone { position: absolute; top: 0; right: 0; width: 55%; height: 100%; pointer-events: auto; touch-action: none; }
+  #btnFlash, #btnAudio, #btnBrightUp, #btnBrightDown {
+    position: absolute; border-radius: 50%; background: rgba(0,0,0,0.55); color: #fff; pointer-events: auto;
+    display: flex; align-items: center; justify-content: center; text-align: center; border: 2px solid #666;
+  }
+  #btnFlash, #btnAudio { width: 54px; height: 54px; font-size: 10px; }
+  #btnFlash { bottom: 150px; right: 24px; }
+  #btnAudio { bottom: 80px; right: 24px; }
+  #btnBrightUp, #btnBrightDown { width: 46px; height: 46px; font-size: 20px; font-weight: bold; }
+  #btnBrightUp { top: 24px; right: 24px; }
+  #btnBrightDown { top: 80px; right: 24px; }
+  body.mobile #mobileControls { display: block; }
+</style>
+</head>
+<body>
+<div id="overlay">
+  <h1>PS1 JUNGLE</h1>
+  <p>
+    Bit-crushed polygons · Dither · Noise overlay · Flashlight<br><br>
+    <strong>Click / Tap to enter</strong><br>
+    WASD / stick · Mouse / drag look · F flashlight · +/− brightness
+  </p>
+  <button id="startBtn">Enter</button>
+  <button id="optionsBtn" style="margin-top:0.6rem;background:#222;border-color:#555;">Options</button>
+</div>
+<div id="options" style="display:none;position:absolute;inset:0;background:rgba(0,0,0,0.85);z-index:20;flex-direction:column;align-items:center;justify-content:center;text-align:center;">
+  <h2 style="color:#8b4513;margin:0 0 1rem;">Options</h2>
+  <div style="line-height:2.2;">
+    Resolution: <select id="optRes"><option value="80">80×60</option><option value="160" selected>160×120</option><option value="240">240×180</option></select><br>
+    Dither: <select id="optDither"><option value="0">None</option><option value="1" selected>Bayer 4×4</option><option value="2">Bayer 8×8</option><option value="3">Noise</option></select><br>
+    Noise: <input id="optNoise" type="range" min="0" max="0.5" step="0.01" value="0.22"><br>
+    Chroma: <input id="optChroma" type="range" min="0" max="0.015" step="0.001" value="0.004"><br>
+    Scanlines: <input id="optScan" type="range" min="0" max="0.4" step="0.01" value="0.06"><br>
+    Color Crush: <input id="optCrush" type="range" min="3" max="32" step="1" value="14"><br>
+    Grade: <select id="optGrade"><option value="0">Cold Moon</option><option value="1" selected>Warm Torch</option><option value="2">Panic</option></select><br>
+    Preset: <select id="optPreset"><option value="custom">Custom</option><option value="night">Night</option><option value="storm">Storm</option><option value="panic">Panic</option></select><br>
+    Letterbox: <input id="optLetter" type="checkbox"><br>
+    Sensitivity: <input id="optSens" type="range" min="0.5" max="2" step="0.1" value="1"><br>
+    Vertex Snap: <input id="optSnap" type="checkbox" checked><br>
+    Brightness: <input id="optBright" type="range" min="0.25" max="2.8" step="0.05" value="1"><br>
+    Gamma: <input id="optGamma" type="range" min="1.4" max="3" step="0.05" value="2.2"><br>
+    Contrast: <input id="optContrast" type="range" min="0.5" max="1.6" step="0.05" value="1">
+  </div>
+  <button id="optionsClose" style="margin-top:1.2rem;padding:0.6rem 1.2rem;background:#3a2010;color:#fff;border:1px solid #8b4513;">Close</button>
+</div>
+<div id="letterbox" style="display:none;position:absolute;inset:0;pointer-events:none;z-index:4;">
+  <div style="position:absolute;top:0;left:0;right:0;height:8%;background:#000;"></div>
+  <div style="position:absolute;bottom:0;left:0;right:0;height:8%;background:#000;"></div>
+</div>
+<div id="hud">FPS: --</div>
+<div id="brightnessLabel">Brightness: 100%</div>
+<div id="crosshair"></div>
+<div id="mobileControls">
+  <div id="joystick"><div id="joystickKnob"></div></div>
+  <div id="lookZone"></div>
+  <button id="btnFlash">FLASH</button>
+  <button id="btnAudio">AUDIO</button>
+  <button id="btnBrightUp">+</button>
+  <button id="btnBrightDown">−</button>
+  <button id="btnOptions" style="position:absolute;top:24px;left:24px;width:54px;height:54px;border-radius:50%;background:rgba(0,0,0,0.55);color:#fff;border:2px solid #666;pointer-events:auto;font-size:10px;">OPT</button>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/" } }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+
+const LOW_W = 160, LOW_H = 120, SPEED = 4.2;
+const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+
+const canvas = document.createElement('canvas');
+document.body.appendChild(canvas);
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
+renderer.setPixelRatio(1);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const lowRes = new THREE.WebGLRenderTarget(LOW_W, LOW_H, {
+  minFilter: THREE.NearestFilter,
+  magFilter: THREE.NearestFilter,
+  format: THREE.RGBAFormat,
+  type: THREE.HalfFloatType, // HDR: lights above 1.0 survive for bloom + tone mapping
+  depthTexture: new THREE.DepthTexture(LOW_W, LOW_H)
+});
+const crushRT = new THREE.WebGLRenderTarget(LOW_W, LOW_H, {
+  minFilter: THREE.NearestFilter,
+  magFilter: THREE.NearestFilter
+});
+
+// Post-process, two passes:
+//  1. postMat (low-res): volumetric fog + bloom + tone map + grade, bit-crush LAST
+//  2. upMat (screen-res): nearest upscale + chroma fringe + scanlines
+const upScene = new THREE.Scene();
+const upCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const quadVert = `
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+const postMat = new THREE.ShaderMaterial({
+  uniforms: {
+    tDiffuse: { value: lowRes.texture },
+    tDepth: { value: lowRes.depthTexture },
+    res: { value: new THREE.Vector2(LOW_W, LOW_H) },
+    time: { value: 0 },
+    noiseAmount: { value: 0.22 },
+    dither: { value: 1.0 },
+    ditherMode: { value: 1 },
+    chroma: { value: 0.004 },
+    scanlines: { value: 0.06 },
+    crush: { value: 14.0 },
+    flashOn: { value: 1.0 },
+    battery: { value: 1.0 },
+    grade: { value: 1 }, // 0=cold, 1=warm, 2=panic
+    exposure: { value: 1.4 },
+    gamma: { value: 2.2 },
+    contrast: { value: 1.0 },
+    bloom: { value: 0.8 },
+    // volumetrics (camera + moon values are bound after those objects exist)
+    volDensity: { value: 0.05 },
+    lightning: { value: 0.0 },
+    flashCone: { value: new THREE.Vector2(0.8, 0.95) },
+    moonColor: { value: new THREE.Color() },
+    moonDir: { value: new THREE.Vector3() },
+    flashDir: { value: new THREE.Vector3(0, 0, -1) },
+    glowPos: { value: Array.from({ length: 5 }, () => new THREE.Vector3()) }, // world space
+    glowCol: { value: Array.from({ length: 5 }, () => new THREE.Color(0)) }, // view space, follows the lagging beam
+    moonMap: { value: null },
+    moonMatrix: { value: null },
+    projInv: { value: null },
+    camWorld: { value: null }
+  },
+  vertexShader: quadVert,
+  fragmentShader: `
+    #include <packing>
+    uniform sampler2D tDiffuse, tDepth, moonMap;
+    uniform mat4 projInv, camWorld, moonMatrix;
+    uniform vec2 res, flashCone;
+    uniform vec3 moonColor, moonDir, flashDir;
+    uniform vec3 glowPos[5], glowCol[5];
+    uniform float time, noiseAmount, dither, crush, flashOn, battery;
+    uniform float exposure, bloom, volDensity, lightning, gamma, contrast;
+    uniform int ditherMode, grade;
+    varying vec2 vUv;
+
+    float bayer4(vec2 p) {
+      int x = int(mod(p.x, 4.0));
+      int y = int(mod(p.y, 4.0));
+      int i = y * 4 + x;
+      float b[16] = float[](0.,8.,2.,10.,12.,4.,14.,6.,3.,11.,1.,9.,15.,7.,13.,5.);
+      return b[i] / 16.0;
+    }
+    float bayer8(vec2 p) {
+      // 8x8 Bayer built from the 4x4: M8 = 4*M4 + M2
+      vec2 q = mod(floor(p / 4.0), 2.0);
+      float m2 = 2.0 * q.x + 3.0 * q.y - 4.0 * q.x * q.y;
+      return (bayer4(p) * 64.0 + m2) / 64.0;
+    }
+    float rand(vec2 co) {
+      return fract(sin(dot(co + time, vec2(12.9898, 78.233))) * 43758.5453);
+    }
+    float hash(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+    float vnoise(vec3 p) {
+      vec3 i = floor(p), f = fract(p);
+      f = f * f * (3.0 - 2.0 * f);
+      return mix(mix(mix(hash(i), hash(i + vec3(1,0,0)), f.x), mix(hash(i + vec3(0,1,0)), hash(i + vec3(1,1,0)), f.x), f.y),
+                 mix(mix(hash(i + vec3(0,0,1)), hash(i + vec3(1,0,1)), f.x), mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y), f.z);
+    }
+    vec3 aces(vec3 x) {
+      return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+    }
+
+    void main() {
+      vec2 px = floor(vUv * res); // low-res pixel: dither + noise stay on the pixel grid
+      vec2 uv = vUv - 0.5;
+      vec3 col = texture2D(tDiffuse, vUv).rgb;
+
+      // Bloom: 8 taps on two rings, only HDR values above 1.0 bleed
+      vec3 glow = vec3(0.0);
+      for (int i = 0; i < 8; i++) {
+        float a = float(i) * 0.785398;
+        vec2 o = vec2(cos(a), sin(a)) * (mod(float(i), 2.0) < 1.0 ? 1.5 : 3.5) / res;
+        glow += max(texture2D(tDiffuse, vUv + o).rgb - 1.0, 0.0);
+      }
+      col += glow * 0.125 * bloom;
+
+      // Volumetric fog: march the view ray up to scene depth.
+      // Moon light is tested against its shadow map (shafts between trees).
+      // The flashlight sits at the eye, so depth alone occludes it.
+      float depth = texture2D(tDepth, vUv).x;
+      vec4 vp = projInv * vec4(vUv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+      vp /= vp.w;
+      float dist = length(vp.xyz);
+      vec3 rd = vp.xyz / dist;
+      float stepLen = min(dist, 30.0) / 16.0;
+      float t = stepLen * bayer4(px); // dithered start hides the 16-step banding
+      float cone = smoothstep(flashCone.x, flashCone.y, dot(rd, flashDir)) * flashOn;
+      mat4 toMoon = moonMatrix * camWorld;
+      // forward scattering: fog glows when looking toward the moon
+      float phase = 0.008 + 0.25 * pow(max(dot(mat3(camWorld) * rd, moonDir), 0.0), 6.0);
+      vec3 vol = vec3(0.0);
+      for (int i = 0; i < 16; i++) {
+        vec4 sc = toMoon * vec4(rd * t, 1.0);
+        // drifting fog banks, thicker near the ground
+        vec3 pw = (camWorld * vec4(rd * t, 1.0)).xyz;
+        float dens = (0.3 + 1.7 * vnoise(pw * 0.3 + vec3(time * 0.12, time * 0.03, time * 0.08))) * exp(-max(pw.y, 0.0) * 0.22) * 1.5;
+        float lit = 1.0;
+        if (sc.x > 0.0 && sc.x < 1.0 && sc.y > 0.0 && sc.y < 1.0 && sc.z < 1.0)
+          lit = step(sc.z - 0.003, unpackRGBAToDepth(texture2D(moonMap, sc.xy)));
+        vec3 L = moonColor * lit * phase
+               + vec3(1.0, 0.9, 0.75) * cone * 0.07 / (1.0 + 0.1 * t * t)
+               + vec3(0.7, 0.8, 1.0) * lightning * 0.8;
+        vol += L * dens * exp(-volDensity * t) * stepLen;
+        t += stepLen;
+      }
+      col += vol * volDensity;
+
+      vec3 ro = camWorld[3].xyz, rdW = mat3(camWorld) * rd;
+      // Sky: moon disc + thin cloud lit around it. Depth test: the canopy hides it.
+      if (depth > 0.9999) {
+        float m = max(dot(rdW, moonDir), 0.0);
+        col += vec3(0.75, 0.85, 1.0) * (smoothstep(0.9982, 0.9988, m) * 2.5
+             + pow(m, 10.0) * 0.1 * vnoise(rdW * 6.0 + vec3(time * 0.03, 0.0, 0.0)));
+      }
+      // Point lights glow in the fog: closed-form in-scatter along the ray, no extra march
+      float tEnd = min(dist, 30.0);
+      for (int i = 0; i < 5; i++) {
+        vec3 lp = glowPos[i] - ro;
+        float tc = dot(lp, rdW);
+        float h = max(length(lp - rdW * tc), 0.25);
+        col += glowCol[i] * (atan((tEnd - tc) / h) + atan(tc / h)) / h * volDensity * 0.1;
+      }
+
+      // HDR to display
+      col = aces(col * exposure);
+      col = pow(col, vec3(1.0 / gamma));
+      col = max((col - 0.5) * contrast + 0.5, 0.0);
+
+      // Color grading presets
+      if (grade == 0) col *= vec3(0.7, 0.85, 1.1);       // cold moonlight
+      else if (grade == 1) col *= vec3(1.05, 0.95, 0.8); // warm torch
+      else col = mix(col, vec3(dot(col, vec3(0.3, 0.5, 0.2))), 0.45); // panic
+
+      float luma = dot(col, vec3(0.299, 0.587, 0.114));
+      col = mix(vec3(luma), col, 0.7);
+
+      // Battery-reactive vignette
+      float vigStrength = 0.65 + (1.0 - battery) * 0.35;
+      col *= 1.0 - smoothstep(0.2, 0.95, length(uv)) * vigStrength;
+
+      // Animated noise, stronger in darkness
+      float dark = 1.0 - flashOn * 0.6;
+      col += (rand(px * 0.5) - 0.5) * noiseAmount * 0.12 * (0.6 + dark);
+
+      // Bit-crush last, so nothing above smooths it back out
+      float d = 0.0;
+      if (ditherMode == 1) d = bayer4(px) - 0.5;
+      else if (ditherMode == 2) d = bayer8(px) - 0.5;
+      else if (ditherMode == 3) d = rand(px) - 0.5;
+      // crush brightness, keep hue: clean dithered bands instead of rainbow speckle
+      // The levels sit on a square curve: most of them in the dark end.
+      float l = max(dot(col, vec3(0.299, 0.587, 0.114)), 1e-4);
+      float q = floor(sqrt(l) * crush + 0.5 + d * dither) / crush;
+      col *= q * q / l;
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `
+});
+const upMat = new THREE.ShaderMaterial({
+  uniforms: {
+    tDiffuse: { value: crushRT.texture },
+    chroma: postMat.uniforms.chroma,       // shared objects: the option sliders drive both
+    scanlines: postMat.uniforms.scanlines
+  },
+  vertexShader: quadVert,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform float chroma, scanlines;
+    varying vec2 vUv;
+    void main() {
+      vec2 dir = (vUv - 0.5) * chroma;
+      vec3 col = vec3(texture2D(tDiffuse, vUv + dir).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - dir).b);
+      col *= 1.0 - scanlines * mod(floor(gl_FragCoord.y), 2.0);
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `
+});
+const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), postMat);
+upScene.add(quad);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a1210);
+scene.fog = new THREE.FogExp2(0x0a1210, 0.03);
+
+const camera = new THREE.PerspectiveCamera(72, LOW_W / LOW_H, 0.1, 80);
+camera.position.set(0, 1.6, 5);
+
+const ambient = new THREE.HemisphereLight(0x334455, 0x10160c, 0.55);
+scene.add(ambient);
+const moon = new THREE.DirectionalLight(0x8899bb, 0.45);
+moon.position.set(-14, 12, -10);
+moon.castShadow = true;
+moon.shadow.mapSize.set(1024, 1024);
+moon.shadow.camera.left = moon.shadow.camera.bottom = -26;
+moon.shadow.camera.right = moon.shadow.camera.top = 26;
+moon.shadow.camera.near = 1;
+moon.shadow.camera.far = 60;
+moon.shadow.bias = -0.002;
+moon.shadow.autoUpdate = false; // refreshed every 4th frame in animate()
+scene.add(moon);
+const sun = new THREE.DirectionalLight(0xaabb88, 0.65);
+sun.position.set(8, 12, 4);
+scene.add(sun);
+
+// Distant horror lights
+const redEye1 = new THREE.PointLight(0xff2200, 1.8, 8);
+redEye1.position.set(-7, 1.2, -6);
+scene.add(redEye1);
+const redEye2 = new THREE.PointLight(0xaa0000, 1.2, 6);
+redEye2.position.set(8, 0.8, 4);
+scene.add(redEye2);
+
+const flashlight = new THREE.SpotLight(0xfff0dd, 25, 32, 0.5, 0.5, 1.5);
+flashlight.position.set(0.1, -0.1, 0);
+flashlight.target.position.set(0, -0.1, -1);
+flashlight.castShadow = true;
+flashlight.shadow.mapSize.set(512, 512);
+flashlight.shadow.camera.near = 0.5;
+flashlight.shadow.camera.far = 30;
+flashlight.shadow.bias = -0.001;
+// Cookie: hot centre, lens rings, dirt. (three ignores .map unless castShadow is on)
+{
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  [[0, '#fff'], [0.22, '#e8e8e8'], [0.3, '#8a8a8a'], [0.5, '#9a9a9a'], [0.56, '#6a6a6a'], [0.8, '#555'], [0.86, '#777'], [1, '#000']]
+    .forEach(([t, col]) => g.addColorStop(t, col));
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 64);
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  for (let i = 0; i < 26; i++) ctx.fillRect(Math.random() * 64, Math.random() * 64, 1 + Math.random() * 3, 1 + Math.random() * 2);
+  flashlight.map = new THREE.CanvasTexture(c);
+  flashlight.map.colorSpace = THREE.SRGBColorSpace;
+}
+camera.add(flashlight);
+camera.add(flashlight.target);
+scene.add(camera);
+
+// Bind the volumetric pass to the live camera + light state (shared by reference)
+postMat.uniforms.projInv.value = camera.projectionMatrixInverse;
+postMat.uniforms.camWorld.value = camera.matrixWorld;
+postMat.uniforms.moonMatrix.value = moon.shadow.matrix;
+postMat.uniforms.moonDir.value.copy(moon.position).normalize();
+postMat.uniforms.flashCone.value.set(Math.cos(flashlight.angle), Math.cos(flashlight.angle * (1 - flashlight.penumbra)));
+
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+let flashlightOn = true, brightness = 1.0, battery = 100;
+const baseAmb = 0.1, baseSun = 0.03, baseFlash = 320, baseMoon = 1.6;
+let lightning = 0, fogDensity = 0.03, jitterX = 0;
+let bobPhase = 0, bobAmt = 0, roll = 0;
+const camEuler = new THREE.Euler();
+
+function applyBright() {
+  ambient.intensity = baseAmb * brightness;
+  sun.intensity = lightning > 0 ? 2.5 : baseSun * brightness;
+  moon.intensity = baseMoon * brightness;
+  postMat.uniforms.moonColor.value.copy(moon.color).multiplyScalar(moon.intensity);
+  let flash = flashlightOn && battery > 0 ? baseFlash * brightness : 0;
+  // Flicker when battery is low
+  if (flashlightOn && battery < 30 && battery > 0) {
+    if (Math.random() < 0.08) flash *= 0.15;
+  }
+  flashlight.intensity = flash;
+  document.getElementById('brightnessLabel').textContent =
+    `Brightness: ${Math.round(brightness * 100)}% | Battery: ${Math.round(battery)}%`;
+}
+applyBright();
+function changeBright(d) {
+  brightness = Math.max(0.25, Math.min(2.8, brightness + d));
+  document.getElementById('optBright').value = brightness; // keep the options slider in step with +/-
+  applyBright();
+}
+
+// Materials – flat shaded + low-res painted textures for PS1 look
+// style: 'bark' vertical streaks + knots, 'leaf' gaps + highlights,
+//        'mud' tiling moss/dirt patches + pebbles, 'rock' cracks, '' plain noise
+function makePixelTexture(baseColor, noise = 0.15, size = 4, style = '') {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  const base = [(baseColor >> 16) & 255, (baseColor >> 8) & 255, baseColor & 255];
+  const dirt = [58, 42, 24];
+  const streak = Array.from({ length: size }, () => Math.random() - 0.5);
+  const TAU = Math.PI * 2;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      let n = (Math.random() - 0.5) * noise, rgb = base;
+      if (style === 'bark') {
+        n = streak[x] * noise * 1.8 + n * 0.5;
+        if (Math.random() < 0.05) n -= 0.3;
+      } else if (style === 'leaf') {
+        if (Math.random() < 0.22) n -= 0.28;
+        else if (Math.random() < 0.1) n += 0.2;
+      } else if (style === 'mud') {
+        // sin/cos of whole periods: the patches tile
+        const patch = Math.sin(x / size * TAU * 2 + 1) * Math.cos(y / size * TAU + 2) + Math.sin((x + y) / size * TAU * 3) * 0.4;
+        const k = Math.max(0, Math.min(1, patch * 0.9 + 0.3));
+        rgb = base.map((v, i) => v + (dirt[i] - v) * k);
+        if (Math.random() < 0.04) n += 0.35; // pebble
+      } else if (style === 'rock') {
+        if (Math.abs(x - size / 2 - streak[y] * size) < 0.6 || Math.random() < 0.04) n -= 0.35;
+      }
+      const px = rgb.map(v => Math.max(0, Math.min(255, v + n * 255)) | 0);
+      ctx.fillStyle = `rgb(${px})`;
+      ctx.fillRect(x, y, 1, 1);
+    }
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.generateMipmaps = false;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+
+const groundMat = new THREE.MeshStandardMaterial({
+  map: makePixelTexture(0x2d4a28, 0.3, 32, 'mud'),
+  flatShading: true,
+  roughness: 0.55 // wet ground: flashlight and moon glint off it
+});
+groundMat.map.repeat.set(7, 7);
+
+const trunkMat  = new THREE.MeshStandardMaterial({
+  map: makePixelTexture(0x4a3018, 0.3, 16, 'bark'),
+  flatShading: true
+});
+trunkMat.map.repeat.set(2, 3);
+const leafMat   = new THREE.MeshStandardMaterial({
+  map: makePixelTexture(0x1a5a20, 0.3, 16, 'leaf'),
+  flatShading: true
+});
+const leafMat2  = new THREE.MeshStandardMaterial({
+  map: makePixelTexture(0x2a7a30, 0.25, 16, 'leaf'),
+  flatShading: true
+});
+const rockMat   = new THREE.MeshStandardMaterial({
+  map: makePixelTexture(0x555544, 0.3, 16, 'rock'),
+  flatShading: true
+});
+const bushMat   = new THREE.MeshStandardMaterial({
+  map: makePixelTexture(0x1a4a1a, 0.25, 16, 'leaf'),
+  flatShading: true
+});
+const grassMat  = new THREE.MeshStandardMaterial({
+  map: makePixelTexture(0x3a6a2a, 0.3, 4),
+  flatShading: true
+});
+
+// Ground (finely cut: big polygons tear under affine texturing)
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(36, 36, 24, 24), groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// Trees (real polygon geometry) + collision radii
+// Tall trunks, crowns above head height: the canopy breaks moonlight into shafts.
+const treeColliders = [], leaves = [];
+function makeTree(x, z, s = 1, broad = false) {
+  const g = new THREE.Group();
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.14*s, 0.28*s, 6*s, 6), trunkMat);
+  trunk.position.y = 3 * s;
+  g.add(trunk);
+  if (broad) {
+    // broadleaf: lumpy crown of flattened blobs
+    for (let i = 0; i < 4; i++) {
+      const blob = new THREE.Mesh(new THREE.IcosahedronGeometry((1.3 + Math.random()*0.8) * s, 0), i % 2 ? leafMat : leafMat2);
+      blob.position.set((Math.random()-0.5)*2.4*s, (5.4 + Math.random()*1.4) * s, (Math.random()-0.5)*2.4*s);
+      blob.scale.y = 0.55;
+      blob.rotation.y = Math.random() * 6;
+      g.add(blob);
+    }
+  } else {
+    // conifer: four tiers, lowest branches above eye level
+    [[2.0, 3.2], [1.7, 4.4], [1.3, 5.6], [0.8, 6.8]].forEach(([r, y], i) => {
+      const tier = new THREE.Mesh(new THREE.ConeGeometry(r*s, 2.2*s, 6), i % 2 ? leafMat2 : leafMat);
+      tier.position.y = y * s;
+      tier.rotation.y = Math.random() * 6;
+      g.add(tier);
+    });
+  }
+  g.children.forEach(m => { m.castShadow = m.receiveShadow = true; if (m !== trunk) leaves.push(m); });
+  g.position.set(x, 0, z);
+  g.rotation.y = Math.random() * 6;
+  scene.add(g);
+  treeColliders.push({ x, z, r: 0.5 * s });
+}
+const spots = [
+  [-6,-4],[-5,6],[6,-7],[8,4],[-3,-9],[4,8],[-10,1],[11,-2],
+  [-8,7],[7,6],[1,-11],[2,10],[-13,-3],[13,5],[-6,11],[9,-9],[0,7],[-9,-8]
+];
+// outer ring: a wall of trunks hides the edge of the world
+for (let i = 0; i < 18; i++) {
+  const a = i / 18 * Math.PI * 2, r = 15 + Math.random() * 2;
+  spots.push([Math.cos(a) * r, Math.sin(a) * r]);
+}
+spots.forEach(([x,z], i) => makeTree(x, z, 0.8 + Math.random()*0.5, i % 3 === 2));
+
+// Distant threats
+const threats = [];
+for (let i = 0; i < 3; i++) {
+  const body = new THREE.Mesh(
+    new THREE.ConeGeometry(0.4, 1.6, 4),
+    new THREE.MeshBasicMaterial({ color: 0x110000 })
+  );
+  body.position.set((Math.random()-0.5)*24, 0.8, (Math.random()-0.5)*24);
+  const eye = new THREE.PointLight(0xff0000, 1.5, 5);
+  eye.position.y = 0.6;
+  body.add(eye);
+  body.castShadow = true;
+  scene.add(body);
+  threats.push({ mesh: body, speed: 0.4 + Math.random()*0.3, angle: Math.random()*Math.PI*2 });
+}
+
+const glowLights = [redEye1, redEye2, ...threats.map(t => t.mesh.children[0])]; // matches glowPos[5]
+
+// Rain: streaks + ground splashes. Unlit HDR, brightest inside the flashlight beam.
+const rainMat = new THREE.ShaderMaterial({
+  uniforms: {
+    flashDir: postMat.uniforms.flashDir, // shared with the volumetric pass
+    flashCone: postMat.uniforms.flashCone,
+    flashOn: postMat.uniforms.flashOn
+  },
+  vertexShader: `
+    uniform vec3 flashDir;
+    uniform vec2 flashCone;
+    uniform float flashOn;
+    varying float vB;
+    void main() {
+      vec4 mv = modelViewMatrix * vec4(position, 1.0);
+      float d = length(mv.xyz);
+      float cone = smoothstep(flashCone.x, flashCone.y, dot(mv.xyz / d, flashDir)) * flashOn;
+      vB = min((0.012 + cone * 1.2 / (1.0 + 0.15 * d * d)) * exp(-0.06 * d), 0.45); // cap: no white bars at the lens
+      gl_Position = projectionMatrix * mv;
+      gl_PointSize = 2.0;
+    }
+  `,
+  fragmentShader: `
+    varying float vB;
+    void main() { gl_FragColor = vec4(vec3(0.7, 0.8, 1.0) * vB, 1.0); }
+  `,
+  transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
+});
+const rainCount = 420, RAIN_LEN = 0.45, RAIN_TOP = 11;
+const rainPos = new Float32Array(rainCount * 6); // two vertices per streak
+for (let i = 0; i < rainCount; i++) {
+  rainPos[i*6]   = rainPos[i*6+3] = (Math.random()-0.5)*34;
+  rainPos[i*6+1] = Math.random()*RAIN_TOP;
+  rainPos[i*6+4] = rainPos[i*6+1] - RAIN_LEN;
+  rainPos[i*6+2] = rainPos[i*6+5] = (Math.random()-0.5)*34;
+}
+const rainGeo = new THREE.BufferGeometry();
+rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPos, 3));
+const rain = new THREE.LineSegments(rainGeo, rainMat);
+rain.frustumCulled = false;
+scene.add(rain);
+
+const splashCount = 48, splashLife = new Float32Array(splashCount);
+const splashPos = new Float32Array(splashCount * 3).fill(-10); // parked below ground
+let splashNext = 0;
+const splashGeo = new THREE.BufferGeometry();
+splashGeo.setAttribute('position', new THREE.BufferAttribute(splashPos, 3));
+const splashes = new THREE.Points(splashGeo, rainMat);
+splashes.frustumCulled = false;
+scene.add(splashes);
+
+// Bushes
+for (let i = 0; i < 16; i++) {
+  const b = new THREE.Mesh(new THREE.IcosahedronGeometry(0.35 + Math.random()*0.35, 0), bushMat);
+  b.position.set((Math.random()-0.5)*26, 0.3, (Math.random()-0.5)*26);
+  b.scale.y = 0.7 + Math.random() * 0.5;
+  treeColliders.push({ x: b.position.x, z: b.position.z, r: b.geometry.parameters.radius * 0.8 });
+  b.castShadow = b.receiveShadow = true;
+  scene.add(b);
+}
+// Rocks
+for (let i = 0; i < 14; i++) {
+  const r = new THREE.Mesh(new THREE.DodecahedronGeometry(0.25 + Math.random()*0.45, 0), rockMat);
+  r.position.set((Math.random()-0.5)*28, 0.15, (Math.random()-0.5)*28);
+  r.rotation.set(Math.random(), Math.random(), Math.random());
+  treeColliders.push({ x: r.position.x, z: r.position.z, r: r.geometry.parameters.radius * 0.9 });
+  r.castShadow = r.receiveShadow = true;
+  scene.add(r);
+}
+// Fallen logs
+for (let i = 0; i < 6; i++) {
+  const log = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.26, 2.5 + Math.random()*2, 6), trunkMat);
+  log.position.set((Math.random()-0.5)*26, 0.2, (Math.random()-0.5)*26);
+  const logAngle = Math.random() * 6, logLen = log.geometry.parameters.height;
+  log.rotation.set(Math.PI / 2 + (Math.random()-0.5)*0.15, 0, logAngle);
+  // shortcut: a row of circles stands in for the log's capsule, swap for a real segment test if logs get long
+  for (let k = -2; k <= 2; k++) {
+    treeColliders.push({ x: log.position.x - Math.sin(logAngle) * logLen * k / 5, z: log.position.z + Math.cos(logAngle) * logLen * k / 5, r: 0.4 });
+  }
+  log.castShadow = log.receiveShadow = true;
+  scene.add(log);
+}
+// Grass tufts: one instanced draw call
+{
+  const tufts = new THREE.InstancedMesh(new THREE.ConeGeometry(0.07, 0.5, 3), grassMat, 700);
+  const m = new THREE.Object3D();
+  for (let i = 0; i < 700; i++) {
+    m.position.set((Math.random()-0.5)*35, 0.2, (Math.random()-0.5)*35);
+    m.rotation.set((Math.random()-0.5)*0.5, Math.random()*6, (Math.random()-0.5)*0.5);
+    m.scale.setScalar(0.6 + Math.random()*0.9);
+    m.updateMatrix();
+    tufts.setMatrixAt(i, m.matrix);
+  }
+  tufts.receiveShadow = true;
+  scene.add(tufts);
+}
+
+// PS1 geometry: vertices snap to the pixel grid, textures map without perspective correction
+const snapRes = { value: new THREE.Vector2(LOW_W / 2, LOW_H / 2) };
+const affine = { value: 1 };
+function applyVertexSnap(mat) {
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.snapRes = snapRes;
+    shader.uniforms.affine = affine;
+    // uv*w and w, both interpolated with perspective, divide back to a screen-linear uv
+    shader.vertexShader = 'uniform vec2 snapRes;\nvarying vec3 vAffine;\n' + shader.vertexShader.replace(
+      '#include <project_vertex>',
+      `#include <project_vertex>
+      gl_Position.xy = floor(gl_Position.xy / gl_Position.w * snapRes) / snapRes * gl_Position.w;
+      vAffine = vec3(vMapUv * gl_Position.w, gl_Position.w);`
+    );
+    shader.fragmentShader = 'uniform float affine;\nvarying vec3 vAffine;\n' + shader.fragmentShader.replace(
+      '#include <map_fragment>',
+      THREE.ShaderChunk.map_fragment.replace('vMapUv', 'mix(vMapUv, vAffine.xy / vAffine.z, affine)')
+    );
+  };
+}
+[groundMat, trunkMat, leafMat, leafMat2, rockMat, bushMat, grassMat].forEach(applyVertexSnap);
+function updateSnap() {
+  const on = document.getElementById('optSnap').checked;
+  affine.value = on ? 1 : 0;
+  // off = grid far finer than a pixel
+  snapRes.value.set(on ? lowRes.width / 2 : 4096, on ? lowRes.height / 2 : 4096);
+}
+[groundMat, trunkMat, leafMat, leafMat2, rockMat, bushMat].forEach(applyVertexSnap);
+
+// Audio
+let audioCtx = null, ambientGain = null, footstepTimer = 0;
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  ambientGain = audioCtx.createGain();
+  ambientGain.gain.value = 0.06;
+  ambientGain.connect(audioCtx.destination);
+  const osc = audioCtx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.value = 42;
+  const filter = audioCtx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.value = 180;
+  osc.connect(filter).connect(ambientGain);
+  osc.start();
+}
+function playFootstep() {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  // Occlusion: quieter when near trees
+  let occlude = 1.0;
+  for (const c of treeColliders) {
+    const dx = camera.position.x - c.x, dz = camera.position.z - c.z;
+    if (dx*dx + dz*dz < 4.0) occlude *= 0.6;
+  }
+  osc.type = 'triangle';
+  osc.frequency.value = 80 + Math.random()*40;
+  g.gain.setValueAtTime(0.12 * occlude, audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.12);
+  osc.connect(g).connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.12);
+}
+
+// Controls
+const controls = new PointerLockControls(camera, document.body);
+const keys = {};
+document.addEventListener('keydown', e => keys[e.code] = true);
+document.addEventListener('keyup', e => keys[e.code] = false);
+
+const overlay = document.getElementById('overlay');
+const options = document.getElementById('options');
+const optionsBtn = document.getElementById('optionsBtn');
+const optionsClose = document.getElementById('optionsClose');
+let mouseSens = 1.0;
+
+optionsBtn.addEventListener('click', e => { e.stopPropagation(); options.style.display = 'flex'; });
+optionsBtn.addEventListener('touchend', e => { e.preventDefault(); e.stopPropagation(); options.style.display = 'flex'; }, { passive: false });
+function closeOptions() {
+  options.style.display = 'none';
+  // back into the game, not a dead unlocked screen
+  if (!isMobile && overlay.style.display === 'none') controls.lock();
+}
+// browser refuses a re-lock right after Esc: fall back to the start overlay
+document.addEventListener('pointerlockerror', () => { overlay.style.display = 'flex'; crosshair.style.display = 'none'; });
+optionsClose.addEventListener('click', closeOptions);
+optionsClose.addEventListener('touchend', e => { e.preventDefault(); closeOptions(); }, { passive: false });
+
+document.getElementById('optRes').addEventListener('change', e => {
+  const w = parseInt(e.target.value);
+  const h = w === 80 ? 60 : w === 240 ? 180 : 120;
+  lowRes.setSize(w, h);
+  crushRT.setSize(w, h);
+  postMat.uniforms.res.value.set(w, h);
+  updateSnap();
+});
+document.getElementById('optDither').addEventListener('change', e => {
+  postMat.uniforms.ditherMode.value = parseInt(e.target.value);
+});
+const noiseEl = document.getElementById('optNoise'); // read every frame in animate()
+document.getElementById('optChroma').addEventListener('input', e => {
+  postMat.uniforms.chroma.value = parseFloat(e.target.value);
+});
+document.getElementById('optScan').addEventListener('input', e => {
+  postMat.uniforms.scanlines.value = parseFloat(e.target.value);
+});
+document.getElementById('optCrush').addEventListener('input', e => {
+  postMat.uniforms.crush.value = parseFloat(e.target.value);
+});
+document.getElementById('optGrade').addEventListener('change', e => {
+  postMat.uniforms.grade.value = parseInt(e.target.value);
+});
+document.getElementById('optPreset').addEventListener('change', e => {
+  const p = e.target.value;
+  if (p === 'night') {
+    postMat.uniforms.grade.value = 0;
+    noiseEl.value = 0.15;
+    fogDensity = 0.05;
+  } else if (p === 'storm') {
+    postMat.uniforms.grade.value = 0;
+    noiseEl.value = 0.3;
+    postMat.uniforms.scanlines.value = 0.12;
+  } else if (p === 'panic') {
+    postMat.uniforms.grade.value = 2;
+    noiseEl.value = 0.4;
+    postMat.uniforms.chroma.value = 0.008;
+  }
+});
+document.getElementById('optLetter').addEventListener('change', e => {
+  document.getElementById('letterbox').style.display = e.target.checked ? 'block' : 'none';
+});
+document.getElementById('optSens').addEventListener('input', e => {
+  mouseSens = parseFloat(e.target.value);
+  controls.pointerSpeed = mouseSens;
+});
+document.getElementById('optSnap').addEventListener('change', updateSnap);
+document.getElementById('optBright').addEventListener('input', e => { brightness = parseFloat(e.target.value); applyBright(); });
+document.getElementById('optGamma').addEventListener('input', e => { postMat.uniforms.gamma.value = parseFloat(e.target.value); });
+document.getElementById('optContrast').addEventListener('input', e => { postMat.uniforms.contrast.value = parseFloat(e.target.value); });
+const startBtn = document.getElementById('startBtn');
+const crosshair = document.getElementById('crosshair');
+const hud = document.getElementById('hud');
+if (isMobile) document.body.classList.add('mobile');
+
+let mobileMove = { x: 0, z: 0 };
+let touchLook = { active: false, lastX: 0, lastY: 0 };
+
+function startGame() {
+  overlay.style.display = 'none';
+  crosshair.style.display = 'block';
+  initAudio();
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  if (!isMobile) controls.lock();
+}
+startBtn.addEventListener('click', startGame);
+startBtn.addEventListener('touchend', e => { e.preventDefault(); startGame(); }, { passive: false });
+overlay.addEventListener('touchend', e => {
+  if (e.target.closest('#optionsBtn') || e.target.closest('#options')) return;
+  if (e.target.closest('#overlay')) { e.preventDefault(); startGame(); }
+}, { passive: false });
+controls.addEventListener('lock', () => { overlay.style.display = 'none'; crosshair.style.display = 'block'; });
+controls.addEventListener('unlock', () => {
+  if (!isMobile && options.style.display !== 'flex') {
+    overlay.style.display = 'flex';
+    crosshair.style.display = 'none';
+  }
+});
+
+// Mobile
+const joystick = document.getElementById('joystick');
+const knob = document.getElementById('joystickKnob');
+let joyActive = false, joyCenter = { x: 0, y: 0 };
+joystick.addEventListener('touchstart', e => { e.preventDefault(); joyActive = true; const r = joystick.getBoundingClientRect(); joyCenter = { x: r.left + r.width/2, y: r.top + r.height/2 }; handleJoy(e.touches[0]); }, { passive: false });
+joystick.addEventListener('touchmove', e => { e.preventDefault(); if (joyActive) handleJoy(e.touches[0]); }, { passive: false });
+joystick.addEventListener('touchend', () => { joyActive = false; mobileMove.x = mobileMove.z = 0; knob.style.transform = 'translate(0,0)'; });
+function handleJoy(t) {
+  const dx = t.clientX - joyCenter.x, dy = t.clientY - joyCenter.y;
+  const dist = Math.min(Math.hypot(dx, dy), 48);
+  const a = Math.atan2(dy, dx);
+  knob.style.transform = `translate(${Math.cos(a)*dist}px,${Math.sin(a)*dist}px)`;
+  mobileMove.x = Math.cos(a) * dist / 48;
+  mobileMove.z = Math.sin(a) * dist / 48;
+}
+const lookZone = document.getElementById('lookZone');
+lookZone.addEventListener('touchstart', e => { e.preventDefault(); touchLook.active = true; touchLook.lastX = e.touches[0].clientX; touchLook.lastY = e.touches[0].clientY; }, { passive: false });
+lookZone.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (!touchLook.active) return;
+  const t = e.touches[0];
+  const dx = t.clientX - touchLook.lastX, dy = t.clientY - touchLook.lastY;
+  touchLook.lastX = t.clientX; touchLook.lastY = t.clientY;
+  const euler = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
+  euler.y -= dx * 0.0038 * mouseSens; euler.x -= dy * 0.0038 * mouseSens;
+  euler.x = Math.max(-1.45, Math.min(1.45, euler.x));
+  camera.quaternion.setFromEuler(euler);
+}, { passive: false });
+lookZone.addEventListener('touchend', () => touchLook.active = false);
+
+document.getElementById('btnFlash').addEventListener('touchstart', e => { e.preventDefault(); flashlightOn = !flashlightOn; applyBright(); }, { passive: false });
+document.getElementById('btnFlash').addEventListener('click', () => { flashlightOn = !flashlightOn; applyBright(); });
+document.getElementById('btnBrightUp').addEventListener('touchstart', e => { e.preventDefault(); changeBright(0.12); }, { passive: false });
+document.getElementById('btnBrightDown').addEventListener('touchstart', e => { e.preventDefault(); changeBright(-0.12); }, { passive: false });
+document.getElementById('btnBrightUp').addEventListener('click', () => changeBright(0.12));
+document.getElementById('btnBrightDown').addEventListener('click', () => changeBright(-0.12));
+
+document.getElementById('btnAudio').addEventListener('click', () => {
+  if (audioCtx) audioCtx.state === 'running' ? audioCtx.suspend() : audioCtx.resume();
+});
+document.getElementById('btnOptions').addEventListener('touchstart', e => {
+  e.preventDefault();
+  options.style.display = 'flex';
+  if (controls.isLocked) controls.unlock();
+}, { passive: false });
+document.getElementById('btnOptions').addEventListener('click', () => {
+  options.style.display = 'flex';
+  if (controls.isLocked) controls.unlock();
+});
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'KeyO' || e.code === 'Escape') {
+    if (overlay.style.display === 'none') {
+      if (options.style.display === 'flex') closeOptions();
+      else { options.style.display = 'flex'; if (controls.isLocked) controls.unlock(); }
+    }
+  }
+  if (e.code === 'KeyF') { flashlightOn = !flashlightOn; applyBright(); }
+  if (e.code === 'Equal' || e.code === 'NumpadAdd') changeBright(0.12);
+  if (e.code === 'Minus' || e.code === 'NumpadSubtract') changeBright(-0.12);
+});
+
+function onResize() {
+  renderer.setSize(window.innerWidth, window.innerHeight, false);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', onResize);
+onResize();
+
+const clock = new THREE.Clock();
+const camFwd = new THREE.Vector3(), beamDir = new THREE.Vector3(0, 0, -1), camInv = new THREE.Quaternion();
+let frames = 0, lastFps = 0;
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.1);
+
+  const playing = controls.isLocked || isMobile;
+
+  // Subtle PS1 camera jitter
+  if (playing && overlay.style.display === 'none') {
+    // offset, not a random walk: no drift
+    camera.position.x -= jitterX;
+    jitterX = (Math.random() - 0.5) * 0.004;
+    camera.position.x += jitterX;
+    camera.position.y = 1.6 + (Math.random() - 0.5) * 0.003 + Math.sin(bobPhase) * 0.045 * bobAmt;
+  }
+
+  // Pulse the distant red lights
+  redEye1.intensity = 1.4 + Math.sin(clock.elapsedTime * 3.5) * 0.6;
+  redEye2.intensity = 0.9 + Math.sin(clock.elapsedTime * 2.1 + 1) * 0.4;
+
+  // Animated fog
+  scene.fog.density = fogDensity * (1 + Math.sin(clock.elapsedTime * 0.15) * 0.2);
+  postMat.uniforms.volDensity.value = scene.fog.density;
+
+  // Noise stays at the slider value (the old threat / low-battery pulse read as a glitch)
+  postMat.uniforms.noiseAmount.value = +noiseEl.value;
+
+  // Lightning flash
+  lightning -= dt;
+  if (Math.random() < 0.0008) lightning = 0.08;
+
+  // Leaf sway (phase from the tree's world x)
+  for (const leaf of leaves) {
+    leaf.rotation.z = Math.sin(clock.elapsedTime * 0.8 + leaf.parent.position.x) * 0.04;
+  }
+
+  // Ground UV scroll
+  if (groundMat.map) groundMat.map.offset.x = clock.elapsedTime * 0.002;
+
+  // Battery drain while the flashlight is on
+  if (playing && overlay.style.display === 'none' && flashlightOn) {
+    battery = Math.max(0, battery - dt * 1.8);
+  }
+  applyBright();
+
+  // Movement + collision + footsteps
+  let moved = false, strafe = 0;
+  if (playing && overlay.style.display === 'none') {
+    const dir = new THREE.Vector3();
+    if (isMobile) { dir.x = mobileMove.x; dir.z = mobileMove.z; }
+    else {
+      if (keys['KeyW'] || keys['ArrowUp']) dir.z -= 1;
+      if (keys['KeyS'] || keys['ArrowDown']) dir.z += 1;
+      if (keys['KeyA'] || keys['ArrowLeft']) dir.x -= 1;
+      if (keys['KeyD'] || keys['ArrowRight']) dir.x += 1;
+    }
+    if (dir.lengthSq()) {
+      if (dir.lengthSq() > 1) dir.normalize(); // keep analog stick magnitude
+      // move in camera space, then test the real world position
+      const px = camera.position.x, pz = camera.position.z;
+      controls.moveRight(dir.x * SPEED * dt);
+      controls.moveForward(-dir.z * SPEED * dt);
+      const nextX = camera.position.x, nextZ = camera.position.z;
+      let blocked = Math.abs(nextX) > 17.5 || Math.abs(nextZ) > 17.5; // ground edge
+      for (const c of treeColliders) {
+        const dx = nextX - c.x, dz = nextZ - c.z;
+        const ox = px - c.x, oz = pz - c.z;
+        // block only moves that go deeper in: a player who starts inside clutter can always walk out
+        if (dx*dx + dz*dz < c.r * c.r && dx*dx + dz*dz < ox*ox + oz*oz) { blocked = true; break; }
+      }
+      if (blocked) { camera.position.x = px; camera.position.z = pz; }
+      else {
+        moved = true; strafe = dir.x;
+        footstepTimer += dt;
+        if (footstepTimer > 0.45) { playFootstep(); footstepTimer = 0; }
+      }
+    }
+  }
+
+  // Head bob (one dip per footstep) + lean into strafes
+  bobAmt += ((moved ? 1 : 0) - bobAmt) * Math.min(1, dt * 8);
+  if (moved) bobPhase += dt * 14;
+  roll += (-strafe * 0.03 - roll) * Math.min(1, dt * 6);
+  camEuler.setFromQuaternion(camera.quaternion, 'YXZ');
+  camEuler.z = roll;
+  camera.quaternion.setFromEuler(camEuler);
+
+  // Threats wander
+  threats.forEach(t => {
+    t.angle += dt * 0.25;
+    t.mesh.position.x += Math.cos(t.angle) * t.speed * dt;
+    t.mesh.position.z += Math.sin(t.angle) * t.speed * dt;
+    const dist = camera.position.distanceTo(t.mesh.position);
+    const light = t.mesh.children[0];
+    if (light) light.intensity = (dist < 10 && flashlightOn) ? 0.25 : 1.4;
+  });
+
+  // Flashlight: the beam trails the view and sways in the hand
+  camera.getWorldDirection(camFwd);
+  beamDir.lerp(camFwd, 1 - Math.exp(-dt * 9)).normalize();
+  flashlight.target.position.copy(beamDir).applyQuaternion(camInv.copy(camera.quaternion).invert());
+  flashlight.target.position.x += Math.sin(clock.elapsedTime * 1.3) * 0.015;
+  flashlight.target.position.y += Math.sin(clock.elapsedTime * 1.9) * 0.012;
+  postMat.uniforms.flashDir.value.copy(flashlight.target.position).normalize();
+  flashlight.target.position.add(flashlight.position);
+
+  // Rain streaks; each one that lands leaves a short splash
+  const rpos = rain.geometry.attributes.position.array;
+  for (let i = 0; i < splashCount; i++) {
+    if (splashLife[i] > 0 && (splashLife[i] -= dt) <= 0) splashPos[i*3+1] = -10;
+  }
+  for (let i = 0; i < rainCount; i++) {
+    rpos[i*6+1] -= dt * 14;
+    if (rpos[i*6+1] < 0) {
+      splashPos[splashNext*3] = rpos[i*6];
+      splashPos[splashNext*3+1] = 0.04;
+      splashPos[splashNext*3+2] = rpos[i*6+2];
+      splashLife[splashNext] = 0.12;
+      splashNext = (splashNext + 1) % splashCount;
+      rpos[i*6+1] = RAIN_TOP;
+    }
+    rpos[i*6+4] = rpos[i*6+1] - RAIN_LEN;
+  }
+  rain.geometry.attributes.position.needsUpdate = true;
+  splashGeo.attributes.position.needsUpdate = true;
+
+  moon.shadow.needsUpdate = renderer.info.render.frame % 4 === 0;
+  renderer.setRenderTarget(lowRes);
+  renderer.render(scene, camera);
+
+  postMat.uniforms.time.value = clock.elapsedTime;
+  glowLights.forEach((l, i) => {
+    l.getWorldPosition(postMat.uniforms.glowPos.value[i]);
+    postMat.uniforms.glowCol.value[i].copy(l.color).multiplyScalar(l.intensity);
+  });
+  postMat.uniforms.flashOn.value = Math.min(1, flashlight.intensity / baseFlash); // follows flicker
+  postMat.uniforms.battery.value = battery / 100.0;
+  postMat.uniforms.lightning.value = lightning > 0 ? 1.0 : 0.0;
+  postMat.uniforms.moonMap.value = moon.shadow.map && moon.shadow.map.texture;
+  quad.material = postMat;
+  renderer.setRenderTarget(crushRT);
+  renderer.render(upScene, upCam);
+
+  quad.material = upMat;
+  renderer.setRenderTarget(null);
+  renderer.render(upScene, upCam);
+
+  frames++;
+  if (clock.elapsedTime - lastFps > 0.5) {
+    hud.textContent = `FPS: ${Math.round(frames / (clock.elapsedTime - lastFps))} | Flash: ${flashlightOn ? 'ON' : 'OFF'} | Bat: ${Math.round(battery)}% | ${lowRes.width}×${lowRes.height}`;
+    frames = 0; lastFps = clock.elapsedTime;
+  }
+}
+animate();
+</script>
+</body>
+</html>
