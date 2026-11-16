@@ -18,7 +18,7 @@
     margin-top: 1.2rem; padding: 0.7rem 1.4rem; font-size: 1rem;
     background: #3a2010; color: #fff; border: 1px solid #8b4513; cursor: pointer;
   }
-  #hud { position: absolute; bottom: 10px; left: 10px; font-size: 13px; pointer-events: none; text-shadow: 1px 1px 2px #000; }
+  #hud { display: none; position: absolute; bottom: 10px; left: 10px; font-size: 13px; pointer-events: none; text-shadow: 1px 1px 2px #000; }
   #brightnessLabel { position: absolute; top: 10px; left: 10px; font-size: 13px; pointer-events: none; text-shadow: 1px 1px 2px #000; }
   #crosshair { position: absolute; top: 50%; left: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; background: #fff; opacity: 0.5; pointer-events: none; display: none; }
   #mobileControls { display: none; position: absolute; inset: 0; pointer-events: none; z-index: 5; }
@@ -26,8 +26,8 @@
   #joystickKnob { position: absolute; width: 44px; height: 44px; background: rgba(255,255,255,0.4); border-radius: 50%; left: 33px; top: 33px; pointer-events: none; }
   #lookZone { position: absolute; top: 0; right: 0; width: 55%; height: 100%; pointer-events: auto; touch-action: none; }
   #btnFlash, #btnCrank, #btnUse, #btnCam, #btnCrouch {
-    position: absolute; border-radius: 50%; background: rgba(0,0,0,0.55); color: #fff; pointer-events: auto;
-    display: flex; align-items: center; justify-content: center; text-align: center; border: 2px solid #666;
+    position: absolute; border-radius: 50%; background: rgba(0,0,0,0.3); color: rgba(255,255,255,0.75); pointer-events: auto;
+    display: flex; align-items: center; justify-content: center; text-align: center; border: 2px solid rgba(255,255,255,0.28);
   }
   #btnFlash, #btnCrank, #btnUse, #btnCam, #btnCrouch { width: 54px; height: 54px; font-size: 10px; }
   #btnCrouch { bottom: 185px; right: 90px; }
@@ -36,6 +36,18 @@
   #btnFlash { bottom: 150px; right: 24px; }
   #btnCrank { bottom: 80px; right: 24px; }
   #btnCam { bottom: 115px; right: 90px; }
+  /* touch buttons appear only once they mean something */
+  #btnAlbum { position: absolute; top: 24px; left: 90px; width: 54px; height: 54px; border-radius: 50%; background: rgba(0,0,0,0.3); color: rgba(255,255,255,0.75);
+    border: 2px solid rgba(255,255,255,0.28); pointer-events: auto; font-size: 10px; align-items: center; justify-content: center; }
+  #btnFlash, #btnCrank, #btnCam, #btnUse, #btnAlbum { display: none; }
+  body.has-torch #btnFlash, body.has-torch #btnCrank, body.has-cam #btnCam, body.has-cam #btnAlbum, body.near-item #btnUse { display: flex; }
+  body.debug #hud { display: block; }
+  #albumView { display: none; position: absolute; inset: 0; z-index: 8; background: rgba(0,0,0,0.9); overflow-y: auto; padding: 16px; box-sizing: border-box; }
+  #albumGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; max-width: 760px; margin: 0 auto; }
+  #albumGrid figure { margin: 0; background: #d8d2bc; color: #1c1a15; padding: 8px 8px 10px; font-size: 13px; line-height: 1.4; }
+  #albumGrid img { width: 100%; display: block; image-rendering: pixelated; margin-bottom: 6px; }
+  #albumGrid p { grid-column: 1 / -1; text-align: center; color: #999; }
+  #albumGrid .note { white-space: pre-line; }
   #fade { position: absolute; inset: 0; background: #000; opacity: 1; pointer-events: none; }
   #shot { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
   #prompt { position: absolute; left: 0; right: 0; bottom: 22%; text-align: center; font-size: 15px; color: #e0b070; pointer-events: none; text-shadow: 1px 1px 2px #000; }
@@ -63,7 +75,7 @@
     You cannot fight. Walk softly, use the light, get out.<br><br>
     <strong>Click / Tap to enter</strong><br>
     WASD move · Shift run · C sneak · E use · F torch<br>
-    hold R wind torch · left click photograph · O options<br>
+    hold R wind torch · left click photograph · Tab album · O options<br>
     Touch: CROUCH toggles sneaking, pushing the stick to its edge runs
   </p>
   <button id="startBtn">Enter</button>
@@ -83,6 +95,7 @@
     <label><span>Letterbox</span><input id="optLetter" type="checkbox"></label>
     <label><span>Sensitivity</span><input id="optSens" type="range" min="0.5" max="2" step="0.1" value="1"></label>
     <label><span>Vertex Snap</span><input id="optSnap" type="checkbox" checked></label>
+    <label><span>Debug info</span><input id="optDebug" type="checkbox"></label>
     <label><span>Brightness</span><input id="optBright" type="range" min="0.25" max="2.8" step="0.05" value="1"></label>
     <label><span>Gamma</span><input id="optGamma" type="range" min="1.4" max="3" step="0.05" value="2.2"></label>
     <label><span>Contrast</span><input id="optContrast" type="range" min="0.5" max="1.6" step="0.05" value="1"></label>
@@ -100,6 +113,7 @@
 <div id="brightnessLabel"></div>
 <div id="prompt"></div>
 <div id="msg"></div>
+<div id="albumView"><div id="albumGrid"></div></div>
 <div id="noteView"><div><span id="noteText"></span><button id="noteClose">Close</button></div></div>
 <div id="crosshair"></div>
 <div id="mobileControls">
@@ -110,6 +124,7 @@
   <button id="btnUse">USE</button>
   <button id="btnCam">CAM</button>
   <button id="btnCrouch">CROUCH</button>
+  <button id="btnAlbum">ALBUM</button>
   <button id="btnOptions" style="position:absolute;top:24px;left:24px;width:54px;height:54px;border-radius:50%;background:rgba(0,0,0,0.55);color:#fff;border:2px solid #666;pointer-events:auto;font-size:10px;">OPT</button>
 </div>
 
@@ -199,6 +214,7 @@ const postMat = new THREE.ShaderMaterial({
     flashOn: { value: 1.0 },
     battery: { value: 1.0 },
     grade: { value: 1 }, // 0=cold, 1=warm, 2=panic
+    threat: { value: 0 }, // 0..1, set by the game layer
     exposure: { value: 1.4 },
     gamma: { value: 2.2 },
     contrast: { value: 1.0 },
@@ -227,7 +243,7 @@ const postMat = new THREE.ShaderMaterial({
     uniform vec3 moonColor, moonDir, flashDir;
     uniform vec3 glowPos[5], glowCol[5];
     uniform float time, noiseAmount, dither, crush, flashOn, battery;
-    uniform float exposure, bloom, volDensity, lightning, gamma, contrast, saturation;
+    uniform float exposure, bloom, volDensity, lightning, gamma, contrast, saturation, threat;
     uniform int ditherMode, grade;
     varying vec2 vUv;
 
@@ -335,8 +351,9 @@ const postMat = new THREE.ShaderMaterial({
       col = max(mix(vec3(luma), col, saturation * smoothstep(0.0, 0.1, luma)), 0.0);
 
       // Battery-reactive vignette
-      float vigStrength = 0.65 + (1.0 - battery) * 0.35;
-      col *= 1.0 - smoothstep(0.2, 0.95, length(uv)) * vigStrength;
+      // Vignette: heavier on a weak torch, and it closes in under threat
+      float vigStrength = 0.65 + (1.0 - battery) * 0.35 + threat * 0.45;
+      col *= max(0.0, 1.0 - smoothstep(0.2 - threat * 0.1, 0.95 - threat * 0.22, length(uv)) * vigStrength);
 
       // Animated noise, stronger in darkness
       float dark = 1.0 - flashOn * 0.6;
@@ -362,15 +379,16 @@ const upMat = new THREE.ShaderMaterial({
   uniforms: {
     tDiffuse: { value: crushRT.texture },
     chroma: postMat.uniforms.chroma,       // shared objects: the option sliders drive both
-    scanlines: postMat.uniforms.scanlines
+    scanlines: postMat.uniforms.scanlines,
+    threat: postMat.uniforms.threat
   },
   vertexShader: quadVert,
   fragmentShader: `
     uniform sampler2D tDiffuse;
-    uniform float chroma, scanlines;
+    uniform float chroma, scanlines, threat;
     varying vec2 vUv;
     void main() {
-      vec2 dir = (vUv - 0.5) * chroma;
+      vec2 dir = (vUv - 0.5) * (chroma + threat * 0.012);
       vec3 col = vec3(texture2D(tDiffuse, vUv + dir).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - dir).b);
       col *= 1.0 - scanlines * mod(floor(gl_FragCoord.y), 2.0);
       gl_FragColor = vec4(col, 1.0);
@@ -452,7 +470,7 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 let flashlightOn = false, brightness = 1.0, battery = 0;
 // Demo state. Everything a reload must put back lives here or in resetGame().
 const game = { started: false, hasTorch: false, hasCamera: false, hasKey: false, evidence: new Set(),
-  dead: false, won: false, wake: 0, shotCooldown: 0, flashT: 0, running: false };
+  dead: false, won: false, wake: 0, shotCooldown: 0, flashT: 0, running: false, threat: 0, beat: 0, readNote: false };
 let eyeH = EYE;
 const baseAmb = 0.1, baseSun = 0.03, baseFlash = 320, baseMoon = 1.6;
 let lightning = 0, fogDensity = 0.03, jitterX = 0;
@@ -464,14 +482,12 @@ function applyBright() {
   sun.intensity = lightning > 0 ? 2.5 : baseSun * brightness;
   moon.intensity = baseMoon * brightness;
   postMat.uniforms.moonColor.value.copy(moon.color).multiplyScalar(moon.intensity);
-  let flash = flashlightOn && battery > 0 ? baseFlash * brightness : 0;
+  let flash = flashlightOn && battery > 0 ? baseFlash * brightness * (0.25 + 0.75 * Math.min(1, battery / 45)) : 0;
   // Flicker when battery is low
   if (flashlightOn && battery < 30 && battery > 0) {
     if (Math.random() < 0.08) flash *= 0.15;
   }
   flashlight.intensity = flash;
-  document.getElementById('brightnessLabel').textContent =
-    `${game.hasTorch ? 'Torch ' + Math.round(battery) + '%' : 'No light'} | Evidence ${game.evidence.size}/3`;
 }
 applyBright();
 function changeBright(d) {
@@ -776,6 +792,7 @@ function initAudio() {
   filter.frequency.value = 180;
   osc.connect(filter).connect(ambientGain);
   osc.start();
+  initAmbience();
 }
 function playFootstep(vol = 1) {
   if (!audioCtx) return;
@@ -788,7 +805,7 @@ function playFootstep(vol = 1) {
     if (dx*dx + dz*dz < 4.0) occlude *= 0.6;
   }
   osc.type = 'triangle';
-  osc.frequency.value = 80 + Math.random()*40;
+  osc.frequency.value = (camera.position.z >= FAC_Z0 ? 150 : 80) + Math.random()*40; // hard floor indoors, soft ground outside
   g.gain.setValueAtTime(0.12 * occlude * vol, audioCtx.currentTime);
   g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.12);
   osc.connect(g).connect(audioCtx.destination);
@@ -884,6 +901,7 @@ document.getElementById('optSens').addEventListener('input', e => {
   controls.pointerSpeed = mouseSens;
 });
 document.getElementById('optSnap').addEventListener('change', updateSnap);
+document.getElementById('optDebug').addEventListener('change', e => document.body.classList.toggle('debug', e.target.checked));
 document.getElementById('optBright').addEventListener('input', e => { brightness = parseFloat(e.target.value); applyBright(); });
 document.getElementById('optGamma').addEventListener('input', e => { postMat.uniforms.gamma.value = parseFloat(e.target.value); });
 document.getElementById('optContrast').addEventListener('input', e => { postMat.uniforms.contrast.value = parseFloat(e.target.value); });
@@ -958,6 +976,7 @@ const tapBtn = (id, fn) => {
 };
 tapBtn('btnUse', () => interact());
 tapBtn('btnCam', () => takePhoto());
+tapBtn('btnAlbum', () => toggleAlbum());
 tapBtn('btnCrouch', () => { mobileCrouch = !mobileCrouch; document.getElementById('btnCrouch').classList.toggle('on', mobileCrouch); });
 document.getElementById('btnCrank').addEventListener('touchstart', e => { e.preventDefault(); mobileCrank = true; }, { passive: false });
 document.getElementById('btnCrank').addEventListener('touchend', () => { mobileCrank = false; });
@@ -982,6 +1001,7 @@ document.addEventListener('keydown', e => {
   }
   if (e.code === 'KeyF') { toggleTorch(); }
   if (e.code === 'KeyE') interact();
+  if (e.code === 'Tab') { e.preventDefault(); toggleAlbum(); }
   if (e.code === 'Equal' || e.code === 'NumpadAdd') changeBright(0.12);
   if (e.code === 'Minus' || e.code === 'NumpadSubtract') changeBright(-0.12);
 });
@@ -1069,7 +1089,7 @@ Keycard is in the west lab. Take the camera by the exit. Someone has to show the
 Outpost 2 is north, through the trees. Follow the green lamp.`;
 const paper = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.4), unlit(0.5, 0.48, 0.4));
 paper.rotation.x = -Math.PI / 2;
-addItem('N', paper, 0.09, 'Read note', () => openNote(NOTE_TEXT));
+addItem('N', paper, 0.09, 'Read note', () => { game.readNote = true; return openNote(NOTE_TEXT); });
 {
   // the colleague who wrote it
   const body = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.28, 0.5), pixelMat(0x8c8c84, 0.2, 8));
@@ -1160,7 +1180,7 @@ function los(ax, az, bx, bz) {
 }
 
 // ---------- sound: small synthesized cues
-function tone(f0, f1, dur, type = 'sine', vol = 0.2) {
+function tone(f0, f1, dur, type = 'sine', vol = 0.2, pan = 0) {
   if (!audioCtx || vol < 0.004) return;
   const o = audioCtx.createOscillator(), g = audioCtx.createGain(), t = audioCtx.currentTime;
   o.type = type;
@@ -1168,9 +1188,48 @@ function tone(f0, f1, dur, type = 'sine', vol = 0.2) {
   o.frequency.exponentialRampToValueAtTime(f1, t + dur);
   g.gain.setValueAtTime(vol, t);
   g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-  o.connect(g).connect(audioCtx.destination);
+  let out = audioCtx.destination;
+  if (pan && audioCtx.createStereoPanner) { // left or right of where you are looking
+    const sp = audioCtx.createStereoPanner();
+    sp.pan.value = pan;
+    sp.connect(out);
+    out = sp;
+  }
+  o.connect(g).connect(out);
   o.start();
   o.stop(t + dur);
+}
+// where a world position sits in the stereo field, from the way the player faces
+function panOf(x, z) {
+  const dx = x - camera.position.x, dz = z - camera.position.z, d = Math.hypot(dx, dz) || 1;
+  camera.getWorldDirection(camFwd);
+  return Math.max(-1, Math.min(1, (dx * -camFwd.z + dz * camFwd.x) / d)) * 0.9;
+}
+// Rain and wind: one looped noise buffer through two filters. Indoors the rain is a dull drum on the roof.
+let rainGain = null, rainFilter = null, windGain = null;
+function initAmbience() {
+  const len = audioCtx.sampleRate * 2, buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate), data = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+  const loop = () => { const n = audioCtx.createBufferSource(); n.buffer = buf; n.loop = true; n.start(); return n; };
+  rainFilter = audioCtx.createBiquadFilter(); rainFilter.type = 'bandpass'; rainFilter.frequency.value = 500; rainFilter.Q.value = 0.5;
+  rainGain = audioCtx.createGain(); rainGain.gain.value = 0;
+  loop().connect(rainFilter).connect(rainGain).connect(audioCtx.destination);
+  const windFilter = audioCtx.createBiquadFilter(); windFilter.type = 'lowpass'; windFilter.frequency.value = 260;
+  windGain = audioCtx.createGain(); windGain.gain.value = 0;
+  loop().connect(windFilter).connect(windGain).connect(audioCtx.destination);
+}
+function updateAmbience(inside, threat, dt) {
+  if (!rainGain) return;
+  const t = audioCtx.currentTime;
+  rainGain.gain.setTargetAtTime(inside ? 0.03 : 0.1, t, 0.4);
+  rainFilter.frequency.setTargetAtTime(inside ? 450 : 2600, t, 0.4);
+  windGain.gain.setTargetAtTime((inside ? 0.03 : 0.1) * (0.6 + 0.4 * Math.sin(clock.elapsedTime * 0.3)), t, 0.5);
+  // heartbeat: yours, faster and louder the closer the danger
+  if (threat > 0.15 && (game.beat -= dt) <= 0) {
+    game.beat = 1.1 - 0.65 * threat;
+    tone(58, 38, 0.12, 'sine', 0.4 * threat);
+    setTimeout(() => tone(50, 34, 0.1, 'sine', 0.28 * threat), 140);
+  }
 }
 const near = d => 1 / (1 + d * d * 0.03); // loudness of a creature at distance d
 // every loud thing the player does goes through here
@@ -1213,6 +1272,7 @@ function toggleTorch() {
   applyBright();
 }
 function interact() {
+  if (albumOpen) return toggleAlbum();
   if (game.won) return location.reload(); // the end card's button
   if (noteOpen) { noteOpen = false; noteView.style.display = 'none'; return; }
   if (game.dead || game.won || overlay.style.display !== 'none') return;
@@ -1237,9 +1297,12 @@ function nearestItem() {
 const flashBulb = new THREE.PointLight(0xffffff, 0, 16);
 camera.add(flashBulb);
 const EVIDENCE = [
-  { id: 'howler',  name: 'the blind one',      range: 12, pos: () => [howler.x, howler.z] },
-  { id: 'skulker', name: 'the one that waits', range: 12, pos: () => nearestSkulker() },
-  { id: 'breach',  name: 'the breached pen',   range: 7,  pos: () => [pen.position.x, pen.position.z] }
+  { id: 'howler',  name: 'the blind one',      range: 12, pos: () => [howler.x, howler.z],
+    caption: 'No eyes. It turned its whole head toward the shutter. It hunts by sound alone.' },
+  { id: 'skulker', name: 'the one that waits', range: 12, pos: () => nearestSkulker(),
+    caption: 'It was in the dark at the foot of a tree, watching. The flash sent it running.' },
+  { id: 'breach',  name: 'the breached pen',   range: 7,  pos: () => [pen.position.x, pen.position.z],
+    caption: 'The bars are bent outward. Nothing let them out. They let themselves out.' }
 ];
 function inView(x, z, range) {
   const dx = x - camera.position.x, dz = z - camera.position.z, d = Math.hypot(dx, dz);
@@ -1252,7 +1315,7 @@ function nearestSkulker() {
   return [s.x, s.z];
 }
 function takePhoto() {
-  if (!game.hasCamera || game.shotCooldown > 0 || game.dead || game.won || noteOpen || overlay.style.display !== 'none') return;
+  if (!game.hasCamera || game.shotCooldown > 0 || game.dead || game.won || noteOpen || albumOpen || overlay.style.display !== 'none') return;
   game.shotCooldown = 1.2;
   game.flashT = 0.12;
   shotEl.style.transition = 'none'; shotEl.style.opacity = 0.7; void shotEl.offsetWidth;
@@ -1261,7 +1324,41 @@ function takePhoto() {
   makeNoise(camera.position.x, camera.position.z, NOISE_SHUTTER);
   const got = EVIDENCE.filter(e => !game.evidence.has(e.id) && inView(...e.pos(), e.range));
   got.forEach(e => game.evidence.add(e.id));
-  say(got.length ? `Evidence logged: ${got.map(e => e.name).join(', ')}. (${game.evidence.size}/3)` : 'Nothing worth recording.', 3);
+  if (got.length) pendingShot = got; // the next rendered frame, lit by the flash, becomes the photograph
+  say(got.length ? `Recorded: ${got.map(e => e.name).join(', ')}.` : 'Nothing worth recording.', 3);
+}
+
+// ---------- album: the photographs themselves, and the notes you have read
+const album = [], albumView = document.getElementById('albumView'), albumGrid = document.getElementById('albumGrid');
+let pendingShot = null, albumOpen = false;
+function capturePhoto() {
+  const w = crushRT.width, h = crushRT.height, px = new Uint8Array(w * h * 4);
+  renderer.readRenderTargetPixels(crushRT, 0, 0, w, h, px);
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d'), img = ctx.createImageData(w, h);
+  for (let y = 0; y < h; y++) img.data.set(px.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4); // GL rows run bottom-up
+  ctx.putImageData(img, 0, 0);
+  const url = c.toDataURL();
+  pendingShot.forEach(e => album.push({ name: e.name, caption: e.caption, url }));
+  pendingShot = null;
+}
+function toggleAlbum() {
+  if (!game.hasCamera || game.dead || game.won || noteOpen) return;
+  albumOpen = !albumOpen;
+  albumView.style.display = albumOpen ? 'block' : 'none';
+  if (!albumOpen) return;
+  albumGrid.replaceChildren();
+  const add = (tag, text, cls) => { const el = document.createElement(tag); el.textContent = text; if (cls) el.className = cls; return el; };
+  if (!album.length) albumGrid.append(add('p', 'No photographs yet.'));
+  album.forEach(a => {
+    const fig = document.createElement('figure'), img = document.createElement('img');
+    img.src = a.url; img.alt = a.name;
+    fig.append(img, add('figcaption', a.caption));
+    albumGrid.append(fig);
+  });
+  if (game.readNote) albumGrid.append(add('figure', NOTE_TEXT, 'note'));
+  albumGrid.append(add('p', isMobile ? 'Tap ALBUM to close' : 'Tab to close'));
 }
 
 // ---------- the howler: blind, big, hunts sound through the facility
@@ -1311,18 +1408,16 @@ function howlerHear(x, z) {
   const dist = Math.hypot(howler.x - x, howler.z - z), charging = howler.state === 'alert' || howler.state === 'hunt';
   if (dist < HOWLER.trigger) {
     if (!charging) { // first it stops, turns and howls: the player's warning
-      tone(170, 430, 0.7, 'sawtooth', 0.35 * near(dist));
+      tone(170, 430, 0.7, 'sawtooth', 0.35 * near(dist), panOf(howler.x, howler.z));
       howler.state = 'alert';
       howler.wait = HOWLER.react;
       howler.face = Math.atan2(x - howler.x, z - howler.z);
-      if (!game.warned) { game.warned = true; say('It heard that. Stand still. Make no sound.', 5); }
     }
   } else if (charging) {
     return; // already after something close: a distant sound does not pull it off
   } else {
-    if (howler.state === 'wander') tone(140, 110, 0.5, 'sine', 0.3 * near(dist)); // low, curious
+    if (howler.state === 'wander') tone(140, 110, 0.5, 'sine', 0.3 * near(dist), panOf(howler.x, howler.z)); // low, curious
     howler.state = 'curious';
-    if (!game.warnedFar) { game.warnedFar = true; say('Something is coming to listen. Crouch, or stand still.', 5); }
   }
   howler.path = route(cellOf(howler.x, howler.z), [r, c]);
   howler.point = inside ? [x, z] : null; // the exact spot the sound came from
@@ -1331,7 +1426,7 @@ function updateHowler(dt, px, pz) {
   const h = howler, d = Math.hypot(px - h.x, pz - h.z);
   if ((h.click -= dt) <= 0) { // echolocation: you hear it coming
     h.click = h.state === 'hunt' ? 0.4 : 1.5;
-    tone(2600, 1700, 0.03, 'square', 0.22 * near(d));
+    tone(2600, 1700, 0.03, 'square', 0.22 * near(d), panOf(h.x, h.z));
   }
   // Blind: it catches only a player it heard a moment ago. Stand silent and it walks straight past.
   if (d < HOWLER.catchDist && clock.elapsedTime - h.heardT < HOWLER.memory && los(px, pz, h.x, h.z)) return caught();
@@ -1369,7 +1464,7 @@ function updateHowler(dt, px, pz) {
 // dark points sit at the foot of trees on and around the route north
 const DARK = [[2.9, 10.3], [-5.8, 5.5], [7.8, 5.6], [-3.8, -9.3], [6.6, -6.4], [-9.2, 0.6], [10.4, -2.5], [1.7, -10.6], [-8.5, -7.4], [0.8, 6.5]];
 const skulkers = [0, 4].map(home => {
-  const s = { g: new THREE.Group(), home, at: home, x: 0, z: 0, state: 'hide', t: 0, tx: 0, tz: 0, face: 0,
+  const s = { g: new THREE.Group(), home, at: home, x: 0, z: 0, state: 'hide', t: 0, tx: 0, tz: 0, face: 0, rustle: 3,
     eye: Object.assign(new THREE.Object3D(), { color: new THREE.Color(0xffa030), intensity: 0.1 }), eyeMat: unlit(0.25, 0.12, 0.02) };
   const part = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = mat !== s.eyeMat; s.g.add(m); return m; };
   part(new THREE.IcosahedronGeometry(0.3, 1), hideMat, 0, 0.36, 0).scale.set(0.7, 0.5, 2.0);       // long low body
@@ -1393,7 +1488,7 @@ function skulkerFlee(s, px, pz) {
   const pick = ok.length ? ok[Math.floor(Math.random() * ok.length)] : far[0];
   s.at = pick.i;
   [s.tx, s.tz] = DARK[pick.i];
-  if (s.state !== 'flee') tone(1100, 320, 0.35, 'sawtooth', 0.3 * near(Math.hypot(s.x - px, s.z - pz)));
+  if (s.state !== 'flee') tone(1100, 320, 0.35, 'sawtooth', 0.3 * near(Math.hypot(s.x - px, s.z - pz)), panOf(s.x, s.z));
   s.state = 'flee';
 }
 function updateSkulker(s, dt, px, pz) {
@@ -1404,7 +1499,11 @@ function updateSkulker(s, dt, px, pz) {
   if (s.state === 'hide') {
     s.face = Math.atan2(dx, dz); // it watches you
     if (lit) skulkerFlee(s, px, pz);
-    else if (pz < FAC_Z0 && d < SKULKER.sense) { s.state = 'windup'; s.t = SKULKER.windup; tone(3200, 1800, 0.4, 'sawtooth', 0.12); }
+    else if (pz < FAC_Z0 && d < SKULKER.sense) { s.state = 'windup'; s.t = SKULKER.windup; tone(3200, 1800, 0.4, 'sawtooth', 0.12, panOf(s.x, s.z)); }
+    else if ((s.rustle -= dt) <= 0) { // it shifts in the leaves now and then: the only warning it gives
+      s.rustle = 3 + Math.random() * 4;
+      tone(900 + Math.random() * 600, 500, 0.06, 'triangle', 0.09 * near(d), panOf(s.x, s.z));
+    }
   } else if (s.state === 'windup') {
     if (lit) skulkerFlee(s, px, pz);
     else if ((s.t -= dt) <= 0) { // commits to where you are now, and overshoots
@@ -1442,7 +1541,7 @@ function caught() {
 // Back to the last save. The lab is the only save in the demo, so everything since waking is lost.
 function resetGame() {
   mobileCrouch = false; document.getElementById('btnCrouch').classList.remove('on');
-  Object.assign(game, { hasTorch: false, hasCamera: false, hasKey: false, dead: false, won: false, wake: 0, shotCooldown: 0, flashT: 0 });
+  Object.assign(game, { hasTorch: false, hasCamera: false, hasKey: false, dead: false, won: false, wake: 0, shotCooldown: 0, flashT: 0, threat: 0, readNote: false });
   game.evidence.clear();
   flashlightOn = false; battery = 0; eyeH = EYE;
   noteOpen = false; noteView.style.display = 'none';
@@ -1455,7 +1554,7 @@ function resetGame() {
   beamDir.set(-1, 0, 0);
   [howler.x, howler.z] = cellCenter(...findCell('H'));
   Object.assign(howler, { state: 'wander', path: [], point: null, wait: HOWLER.grace, click: 2, heardT: -9 });
-  game.warned = game.warnedFar = false;
+  album.length = 0; pendingShot = null; albumOpen = false; albumView.style.display = 'none';
   howler.g.position.set(howler.x, 0, howler.z);
   skulkers.forEach(s => { s.at = s.home; [s.x, s.z] = DARK[s.home]; s.state = 'hide'; });
   applyBright();
@@ -1488,6 +1587,21 @@ function updateGame(dt, live, active) {
   const it = active && nearestItem();
   promptEl.textContent = it ? `${isMobile ? 'USE' : 'E'}: ${typeof it.label === 'function' ? it.label() : it.label}` : '';
 
+  document.body.classList.toggle('has-torch', game.hasTorch);
+  document.body.classList.toggle('has-cam', game.hasCamera);
+  document.body.classList.toggle('near-item', !!it);
+
+  // Threat: only from something that is actually after you. A skulker still hidden gives nothing away.
+  let threat = 0;
+  if (live) {
+    const hd = Math.hypot(px - howler.x, pz - howler.z);
+    threat = { hunt: 1, alert: 1, curious: 0.6, wander: 0.35 }[howler.state] * Math.max(0, 1 - hd / (howler.state === 'wander' ? 4 : 10));
+    if (skulkers.some(s => s.state === 'windup' || s.state === 'dive')) threat = 1;
+  }
+  game.threat += (threat - game.threat) * Math.min(1, dt * 3);
+  postMat.uniforms.threat.value = game.threat;
+  updateAmbience(pz >= FAC_Z0, live ? game.threat : 0, dt);
+
   if (!live) return; // paused, dead or finished: the creatures hold still
   updateHowler(dt, px, pz);
   skulkers.forEach(s => updateSkulker(s, dt, px, pz));
@@ -1495,6 +1609,7 @@ function updateGame(dt, live, active) {
 }
 resetGame();
 window.demo = { game, camera, howler, skulkers, items, DARK, OUTPOST, cellCenter, findCell, makeNoise, takePhoto, interact, howlerHear,
+  album, get torchOn() { return flashlightOn; },
   get battery() { return battery; }, get crouch() { return mobileCrouch; }, set battery(v) { battery = v; } }; // handle for tests and tuning
 
 function animate() {
@@ -1544,7 +1659,7 @@ function animate() {
   // Movement + collision + footsteps. Sneaking is slow and near silent; running is fast and loud.
   let moved = false, strafe = 0, mode = 'walk';
   const live = playing && overlay.style.display === 'none' && !game.dead && !game.won;
-  const active = live && !noteOpen && game.wake > 1.5;
+  const active = live && !noteOpen && !albumOpen && game.wake > 1.5;
   if (active) {
     const dir = new THREE.Vector3();
     if (isMobile) {
@@ -1640,6 +1755,7 @@ function animate() {
   quad.material = postMat;
   renderer.setRenderTarget(crushRT);
   renderer.render(upScene, upCam);
+  if (pendingShot) capturePhoto();
 
   quad.material = upMat;
   renderer.setRenderTarget(null);
