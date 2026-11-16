@@ -105,6 +105,12 @@ import { PointerLockControls } from 'three/addons/controls/PointerLockControls.j
 const LOW_W = 160, LOW_H = 120, SPEED = 4.2;
 const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
+// Rolling forest floor. One function: mesh, props, player, threats and rain all read it.
+const groundH = (x, z) =>
+  Math.sin(x * 0.35 + 1.3) * 0.5 + Math.cos(z * 0.28 + 0.5) * 0.6 +
+  Math.sin((x + z) * 0.6) * 0.2 + Math.sin(x * 1.3) * Math.cos(z * 1.1) * 0.12;
+const EYE = 1.6;
+
 const canvas = document.createElement('canvas');
 document.body.appendChild(canvas);
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
@@ -300,6 +306,8 @@ const postMat = new THREE.ShaderMaterial({
       float l = max(dot(col, vec3(0.299, 0.587, 0.114)), 1e-4);
       float q = floor(sqrt(l) * crush + 0.5 + d * dither) / crush;
       col *= q * q / l;
+      // then the PS1 framebuffer: 5 bits per channel, same dither
+      col = floor(col * 31.0 + 0.5 + d * dither) / 31.0;
       gl_FragColor = vec4(col, 1.0);
     }
   `
@@ -327,11 +335,11 @@ const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), postMat);
 upScene.add(quad);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0a1210);
-scene.fog = new THREE.FogExp2(0x0a1210, 0.03);
+scene.background = new THREE.Color(0x0a0e12);
+scene.fog = new THREE.FogExp2(0x0a0e12, 0.03);
 
 const camera = new THREE.PerspectiveCamera(72, LOW_W / LOW_H, 0.1, 80);
-camera.position.set(0, 1.6, 5);
+camera.position.set(0, groundH(0, 5) + EYE, 5);
 
 const ambient = new THREE.HemisphereLight(0x334455, 0x10160c, 0.55);
 scene.add(ambient);
@@ -352,10 +360,10 @@ scene.add(sun);
 
 // Distant horror lights
 const redEye1 = new THREE.PointLight(0xff2200, 1.8, 8);
-redEye1.position.set(-7, 1.2, -6);
+redEye1.position.set(-7, groundH(-7, -6) + 1.2, -6);
 scene.add(redEye1);
 const redEye2 = new THREE.PointLight(0xaa0000, 1.2, 6);
-redEye2.position.set(8, 0.8, 4);
+redEye2.position.set(8, groundH(8, 4) + 0.8, 4);
 scene.add(redEye2);
 
 const flashlight = new THREE.SpotLight(0xfff0dd, 25, 32, 0.5, 0.5, 1.5);
@@ -423,14 +431,16 @@ function changeBright(d) {
 }
 
 // Materials – flat shaded + low-res painted textures for PS1 look
+// Palette is a real temperate forest at night: grey-brown bark, blue-green needles,
+// olive broadleaf, leaf-litter floor with moss, pale dead wood. Value contrast over hue.
 // style: 'bark' vertical streaks + knots, 'leaf' gaps + highlights,
-//        'mud' tiling moss/dirt patches + pebbles, 'rock' cracks, '' plain noise
-function makePixelTexture(baseColor, noise = 0.15, size = 4, style = '') {
+//        'mud' tiling patches of altColor + pebbles, 'rock' cracks, '' plain noise
+function makePixelTexture(baseColor, noise = 0.15, size = 4, style = '', altColor = 0x3a2a18) {
   const c = document.createElement('canvas');
   c.width = c.height = size;
   const ctx = c.getContext('2d');
-  const base = [(baseColor >> 16) & 255, (baseColor >> 8) & 255, baseColor & 255];
-  const dirt = [58, 42, 24];
+  const split = hex => [(hex >> 16) & 255, (hex >> 8) & 255, hex & 255];
+  const base = split(baseColor), alt = split(altColor);
   const streak = Array.from({ length: size }, () => Math.random() - 0.5);
   const TAU = Math.PI * 2;
   for (let y = 0; y < size; y++) {
@@ -446,7 +456,7 @@ function makePixelTexture(baseColor, noise = 0.15, size = 4, style = '') {
         // sin/cos of whole periods: the patches tile
         const patch = Math.sin(x / size * TAU * 2 + 1) * Math.cos(y / size * TAU + 2) + Math.sin((x + y) / size * TAU * 3) * 0.4;
         const k = Math.max(0, Math.min(1, patch * 0.9 + 0.3));
-        rgb = base.map((v, i) => v + (dirt[i] - v) * k);
+        rgb = base.map((v, i) => v + (alt[i] - v) * k);
         if (Math.random() < 0.04) n += 0.35; // pebble
       } else if (style === 'rock') {
         if (Math.abs(x - size / 2 - streak[y] * size) < 0.6 || Math.random() < 0.04) n -= 0.35;
@@ -464,75 +474,96 @@ function makePixelTexture(baseColor, noise = 0.15, size = 4, style = '') {
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   return tex;
 }
+const pixelMat = (color, noise, size, style, extra) =>
+  new THREE.MeshStandardMaterial({ map: makePixelTexture(color, noise, size, style, extra && extra.alt), flatShading: true, roughness: (extra && extra.roughness) || 1 });
 
-const groundMat = new THREE.MeshStandardMaterial({
-  map: makePixelTexture(0x2d4a28, 0.3, 32, 'mud'),
-  flatShading: true,
-  roughness: 0.55 // wet ground: flashlight and moon glint off it
-});
-groundMat.map.repeat.set(7, 7);
-
-const trunkMat  = new THREE.MeshStandardMaterial({
-  map: makePixelTexture(0x4a3018, 0.3, 16, 'bark'),
-  flatShading: true
-});
+const groundMat = pixelMat(0x3d3324, 0.25, 32, 'mud', { alt: 0x2a3a20, roughness: 0.6 }); // leaf litter + moss, wet
+groundMat.map.repeat.set(12, 12);
+const trunkMat  = pixelMat(0x40382e, 0.3, 16, 'bark');
 trunkMat.map.repeat.set(2, 3);
-const leafMat   = new THREE.MeshStandardMaterial({
-  map: makePixelTexture(0x1a5a20, 0.3, 16, 'leaf'),
-  flatShading: true
-});
-const leafMat2  = new THREE.MeshStandardMaterial({
-  map: makePixelTexture(0x2a7a30, 0.25, 16, 'leaf'),
-  flatShading: true
-});
-const rockMat   = new THREE.MeshStandardMaterial({
-  map: makePixelTexture(0x555544, 0.3, 16, 'rock'),
-  flatShading: true
-});
-const bushMat   = new THREE.MeshStandardMaterial({
-  map: makePixelTexture(0x1a4a1a, 0.25, 16, 'leaf'),
-  flatShading: true
-});
-const grassMat  = new THREE.MeshStandardMaterial({
-  map: makePixelTexture(0x3a6a2a, 0.3, 4),
-  flatShading: true
-});
+const deadMat   = pixelMat(0x857d6c, 0.25, 16, 'bark'); // bleached dead wood: catches moonlight
+deadMat.map.repeat.set(2, 3);
+const leafMat   = pixelMat(0x1c2e22, 0.25, 16, 'leaf'); // spruce, dark blue-green
+const leafMat2  = pixelMat(0x2a3b26, 0.25, 16, 'leaf');
+const leafMat3  = pixelMat(0x3a4424, 0.25, 16, 'leaf'); // broadleaf, olive
+const rockMat   = pixelMat(0x5d5e5a, 0.3, 16, 'rock');
+const bushMat   = pixelMat(0x2c3a1e, 0.25, 16, 'leaf');
+const grassMat  = pixelMat(0x5a5e36, 0.3, 4);           // dry straw-olive
+const worldMats = [groundMat, trunkMat, deadMat, leafMat, leafMat2, leafMat3, rockMat, bushMat, grassMat];
 
-// Ground (finely cut: big polygons tear under affine texturing)
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(36, 36, 24, 24), groundMat);
+// Ground: runs past the tree ring into the dark, cut into ~1.25 unit quads
+// (terrain needs the vertices, and big polygons tear under affine texturing)
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(60, 60, 48, 48), groundMat);
+{
+  const gp = ground.geometry.attributes.position;
+  // plane is rotated -90° about X below: local (x, y, z) lands at world (x, z, -y)
+  for (let i = 0; i < gp.count; i++) gp.setZ(i, groundH(gp.getX(i), -gp.getY(i)));
+}
 ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
 scene.add(ground);
 
-// Trees (real polygon geometry) + collision radii
-// Tall trunks, crowns above head height: the canopy breaks moonlight into shafts.
-const treeColliders = [], leaves = [];
-function makeTree(x, z, s = 1, broad = false) {
-  const g = new THREE.Group();
-  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.14*s, 0.28*s, 6*s, 6), trunkMat);
-  trunk.position.y = 3 * s;
-  g.add(trunk);
-  if (broad) {
-    // broadleaf: lumpy crown of flattened blobs
-    for (let i = 0; i < 4; i++) {
-      const blob = new THREE.Mesh(new THREE.IcosahedronGeometry((1.3 + Math.random()*0.8) * s, 0), i % 2 ? leafMat : leafMat2);
-      blob.position.set((Math.random()-0.5)*2.4*s, (5.4 + Math.random()*1.4) * s, (Math.random()-0.5)*2.4*s);
-      blob.scale.y = 0.55;
-      blob.rotation.y = Math.random() * 6;
-      g.add(blob);
-    }
-  } else {
-    // conifer: four tiers, lowest branches above eye level
-    [[2.0, 3.2], [1.7, 4.4], [1.3, 5.6], [0.8, 6.8]].forEach(([r, y], i) => {
-      const tier = new THREE.Mesh(new THREE.ConeGeometry(r*s, 2.2*s, 6), i % 2 ? leafMat2 : leafMat);
-      tier.position.y = y * s;
-      tier.rotation.y = Math.random() * 6;
-      g.add(tier);
-    });
+// Break up a primitive's outline. The offset is a hash of the vertex position,
+// so vertices that share a position move together and the mesh stays closed.
+function roughen(geo, amt) {
+  const p = geo.attributes.position, seed = Math.random() * 100;
+  const h = (x, y, z, k) => { const v = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719 + seed + k) * 43758.5453; return v - Math.floor(v) - 0.5; };
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    p.setXYZ(i, x + h(x, y, z, 1) * amt, y + h(x, y, z, 2) * amt, z + h(x, y, z, 3) * amt);
   }
-  g.children.forEach(m => { m.castShadow = m.receiveShadow = true; if (m !== trunk) leaves.push(m); });
-  g.position.set(x, 0, z);
-  g.rotation.y = Math.random() * 6;
+  return geo;
+}
+
+// Trees + collision radii. Three silhouettes:
+//  pine  – bare lower trunk, ragged drooping tiers, dead stubs below the crown
+//  broad – forked limbs, each carrying a lumpy crown
+//  dead  – pale broken trunk, bare limbs
+const treeColliders = [], leaves = [];
+const UP = new THREE.Vector3(0, 1, 0);
+function makeTree(x, z, s, kind) {
+  const g = new THREE.Group();
+  const wood = kind === 'dead' ? deadMat : trunkMat;
+  const H = (kind === 'dead' ? 4.5 + Math.random() * 2 : 7 + Math.random() * 1.5) * s;
+  const trunk = new THREE.Mesh(roughen(new THREE.CylinderGeometry(0.09*s, 0.34*s, H, 6, 4), 0.08*s), wood);
+  trunk.position.y = H / 2 - 0.3; // sunk into the ground: no gap on a slope
+  g.add(trunk);
+  // limb growing up and out from the trunk at height y; returns its tip
+  const limb = (y, len, r) => {
+    const a = Math.random() * 6.28, tilt = 0.6 + Math.random() * 0.7;
+    const d = new THREE.Vector3(Math.cos(a) * Math.sin(tilt), Math.cos(tilt), Math.sin(a) * Math.sin(tilt));
+    const b = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.35, r, len, 4), wood);
+    b.quaternion.setFromUnitVectors(UP, d);
+    b.position.copy(d).multiplyScalar(len / 2).setY(y + d.y * len / 2);
+    g.add(b);
+    return d.multiplyScalar(len).setY(y + d.y);
+  };
+  const crown = (mesh) => { leaves.push(mesh); g.add(mesh); return mesh; };
+  if (kind === 'pine') {
+    for (let i = 0; i < 2; i++) limb(H * (0.22 + Math.random() * 0.18), (0.5 + Math.random() * 0.6) * s, 0.05 * s);
+    const tiers = 5;
+    for (let i = 0; i < tiers; i++) {
+      const t = i / (tiers - 1);
+      const r = (2.1 - 1.55 * t) * s * (0.75 + Math.random() * 0.5);
+      const tier = crown(new THREE.Mesh(roughen(new THREE.ConeGeometry(r, 1.9 * s, 7), 0.28 * s), i % 2 ? leafMat2 : leafMat));
+      tier.position.set((Math.random()-0.5) * 0.3 * s, H * (0.45 + 0.55 * t), (Math.random()-0.5) * 0.3 * s);
+      tier.rotation.y = Math.random() * 6;
+    }
+  } else if (kind === 'broad') {
+    const tips = [new THREE.Vector3(0, H, 0)];
+    for (let i = 0; i < 3; i++) tips.push(limb(H * (0.5 + Math.random() * 0.3), (1.8 + Math.random() * 1.2) * s, 0.11 * s));
+    tips.forEach((tip, i) => {
+      const blob = crown(new THREE.Mesh(roughen(new THREE.IcosahedronGeometry((1.2 + Math.random() * 0.8) * s, 0), 0.4 * s), i % 2 ? leafMat3 : leafMat2));
+      blob.position.copy(tip);
+      blob.scale.y = 0.6;
+      blob.rotation.y = Math.random() * 6;
+    });
+  } else {
+    for (let i = 0; i < 6; i++) limb(H * (0.35 + Math.random() * 0.6), (0.8 + Math.random() * 1.6) * s, 0.07 * s);
+  }
+  g.children.forEach(m => { m.castShadow = m.receiveShadow = true; });
+  g.position.set(x, groundH(x, z), z);
+  g.rotation.set((Math.random()-0.5) * 0.14, Math.random() * 6, (Math.random()-0.5) * 0.14); // nothing grows dead straight
   scene.add(g);
   treeColliders.push({ x, z, r: 0.5 * s });
 }
@@ -545,7 +576,7 @@ for (let i = 0; i < 18; i++) {
   const a = i / 18 * Math.PI * 2, r = 15 + Math.random() * 2;
   spots.push([Math.cos(a) * r, Math.sin(a) * r]);
 }
-spots.forEach(([x,z], i) => makeTree(x, z, 0.8 + Math.random()*0.5, i % 3 === 2));
+spots.forEach(([x,z], i) => makeTree(x, z, 0.8 + Math.random()*0.5, i % 6 === 4 ? 'dead' : i % 3 === 2 ? 'broad' : 'pine'));
 
 // Distant threats
 const threats = [];
@@ -620,6 +651,7 @@ for (let i = 0; i < 16; i++) {
   const b = new THREE.Mesh(new THREE.IcosahedronGeometry(0.35 + Math.random()*0.35, 0), bushMat);
   b.position.set((Math.random()-0.5)*26, 0.3, (Math.random()-0.5)*26);
   b.scale.y = 0.7 + Math.random() * 0.5;
+  b.position.y += groundH(b.position.x, b.position.z);
   treeColliders.push({ x: b.position.x, z: b.position.z, r: b.geometry.parameters.radius * 0.8 });
   b.castShadow = b.receiveShadow = true;
   scene.add(b);
@@ -629,6 +661,7 @@ for (let i = 0; i < 14; i++) {
   const r = new THREE.Mesh(new THREE.DodecahedronGeometry(0.25 + Math.random()*0.45, 0), rockMat);
   r.position.set((Math.random()-0.5)*28, 0.15, (Math.random()-0.5)*28);
   r.rotation.set(Math.random(), Math.random(), Math.random());
+  r.position.y += groundH(r.position.x, r.position.z);
   treeColliders.push({ x: r.position.x, z: r.position.z, r: r.geometry.parameters.radius * 0.9 });
   r.castShadow = r.receiveShadow = true;
   scene.add(r);
@@ -637,6 +670,7 @@ for (let i = 0; i < 14; i++) {
 for (let i = 0; i < 6; i++) {
   const log = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.26, 2.5 + Math.random()*2, 6), trunkMat);
   log.position.set((Math.random()-0.5)*26, 0.2, (Math.random()-0.5)*26);
+  log.position.y += groundH(log.position.x, log.position.z);
   const logAngle = Math.random() * 6, logLen = log.geometry.parameters.height;
   log.rotation.set(Math.PI / 2 + (Math.random()-0.5)*0.15, 0, logAngle);
   // shortcut: a row of circles stands in for the log's capsule, swap for a real segment test if logs get long
@@ -652,6 +686,7 @@ for (let i = 0; i < 6; i++) {
   const m = new THREE.Object3D();
   for (let i = 0; i < 700; i++) {
     m.position.set((Math.random()-0.5)*35, 0.2, (Math.random()-0.5)*35);
+    m.position.y += groundH(m.position.x, m.position.z);
     m.rotation.set((Math.random()-0.5)*0.5, Math.random()*6, (Math.random()-0.5)*0.5);
     m.scale.setScalar(0.6 + Math.random()*0.9);
     m.updateMatrix();
@@ -681,7 +716,7 @@ function applyVertexSnap(mat) {
     );
   };
 }
-[groundMat, trunkMat, leafMat, leafMat2, rockMat, bushMat, grassMat].forEach(applyVertexSnap);
+worldMats.forEach(applyVertexSnap);
 function updateSnap() {
   const on = document.getElementById('optSnap').checked;
   affine.value = on ? 1 : 0;
@@ -915,7 +950,7 @@ function animate() {
     camera.position.x -= jitterX;
     jitterX = (Math.random() - 0.5) * 0.004;
     camera.position.x += jitterX;
-    camera.position.y = 1.6 + (Math.random() - 0.5) * 0.003 + Math.sin(bobPhase) * 0.045 * bobAmt;
+    camera.position.y = groundH(camera.position.x, camera.position.z) + EYE + (Math.random() - 0.5) * 0.003 + Math.sin(bobPhase) * 0.045 * bobAmt;
   }
 
   // Pulse the distant red lights
@@ -994,6 +1029,7 @@ function animate() {
     t.angle += dt * 0.25;
     t.mesh.position.x += Math.cos(t.angle) * t.speed * dt;
     t.mesh.position.z += Math.sin(t.angle) * t.speed * dt;
+    t.mesh.position.y = groundH(t.mesh.position.x, t.mesh.position.z) + 0.8;
     const dist = camera.position.distanceTo(t.mesh.position);
     const light = t.mesh.children[0];
     if (light) light.intensity = (dist < 10 && flashlightOn) ? 0.25 : 1.4;
@@ -1015,9 +1051,10 @@ function animate() {
   }
   for (let i = 0; i < rainCount; i++) {
     rpos[i*6+1] -= dt * 14;
-    if (rpos[i*6+1] < 0) {
+    const floorY = groundH(rpos[i*6], rpos[i*6+2]);
+    if (rpos[i*6+1] < floorY) {
       splashPos[splashNext*3] = rpos[i*6];
-      splashPos[splashNext*3+1] = 0.04;
+      splashPos[splashNext*3+1] = floorY + 0.04;
       splashPos[splashNext*3+2] = rpos[i*6+2];
       splashLife[splashNext] = 0.12;
       splashNext = (splashNext + 1) % splashCount;
