@@ -25,16 +25,22 @@
   #joystick { position: absolute; bottom: 30px; left: 30px; width: 110px; height: 110px; background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.25); border-radius: 50%; pointer-events: auto; touch-action: none; }
   #joystickKnob { position: absolute; width: 44px; height: 44px; background: rgba(255,255,255,0.4); border-radius: 50%; left: 33px; top: 33px; pointer-events: none; }
   #lookZone { position: absolute; top: 0; right: 0; width: 55%; height: 100%; pointer-events: auto; touch-action: none; }
-  #btnFlash, #btnAudio, #btnBrightUp, #btnBrightDown {
+  #btnFlash, #btnCrank, #btnUse, #btnCam {
     position: absolute; border-radius: 50%; background: rgba(0,0,0,0.55); color: #fff; pointer-events: auto;
     display: flex; align-items: center; justify-content: center; text-align: center; border: 2px solid #666;
   }
-  #btnFlash, #btnAudio { width: 54px; height: 54px; font-size: 10px; }
+  #btnFlash, #btnCrank, #btnUse, #btnCam { width: 54px; height: 54px; font-size: 10px; }
+  #btnUse { bottom: 220px; right: 24px; }
   #btnFlash { bottom: 150px; right: 24px; }
-  #btnAudio { bottom: 80px; right: 24px; }
-  #btnBrightUp, #btnBrightDown { width: 46px; height: 46px; font-size: 20px; font-weight: bold; }
-  #btnBrightUp { top: 24px; right: 24px; }
-  #btnBrightDown { top: 24px; right: 82px; } /* beside +, not under it: clear of FLASH on short landscape screens */
+  #btnCrank { bottom: 80px; right: 24px; }
+  #btnCam { bottom: 115px; right: 90px; }
+  #fade { position: absolute; inset: 0; background: #000; opacity: 1; pointer-events: none; }
+  #shot { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+  #prompt { position: absolute; left: 0; right: 0; bottom: 22%; text-align: center; font-size: 15px; color: #e0b070; pointer-events: none; text-shadow: 1px 1px 2px #000; }
+  #msg { position: absolute; left: 0; right: 0; top: 16%; text-align: center; font-size: 15px; padding: 0 16px; pointer-events: none; text-shadow: 1px 1px 2px #000; }
+  #noteView { display: none; position: absolute; inset: 0; z-index: 8; background: rgba(0,0,0,0.8); align-items: center; justify-content: center; padding: 16px; box-sizing: border-box; }
+  #noteView div { max-width: 460px; background: #d8d2bc; color: #1c1a15; padding: 20px; font-size: 15px; line-height: 1.5; white-space: pre-line; }
+  #noteView button { display: block; margin: 16px auto 0; min-height: 44px; min-width: 140px; font: inherit; }
   body.mobile #mobileControls { display: block; }
   /* Options: one row per setting, finger-sized targets, scrolls when taller than the screen */
   #options { overflow-y: auto; padding: 16px; box-sizing: border-box; }
@@ -50,11 +56,13 @@
 </head>
 <body>
 <div id="overlay">
-  <h1>PS1 JUNGLE</h1>
+  <h1>FACILITY ESCAPE · DEMO</h1>
   <p>
-    Bit-crushed polygons · Dither · Noise overlay · Flashlight<br><br>
+    You cannot fight. Walk softly, use the light, get out.<br><br>
     <strong>Click / Tap to enter</strong><br>
-    WASD / stick · Mouse / drag look · F flashlight · +/− brightness
+    WASD move · Shift run · C sneak · E use · F torch<br>
+    hold R wind torch · left click photograph · O options<br>
+    Touch: stick edge runs, stick centre sneaks
   </p>
   <button id="startBtn">Enter</button>
   <button id="optionsBtn" style="margin-top:0.6rem;background:#222;border-color:#555;">Options</button>
@@ -85,15 +93,20 @@
   <div style="position:absolute;bottom:0;left:0;right:0;height:8%;background:#000;"></div>
 </div>
 <div id="hud">FPS: --</div>
-<div id="brightnessLabel">Brightness: 100%</div>
+<div id="fade"></div>
+<div id="shot"></div>
+<div id="brightnessLabel"></div>
+<div id="prompt"></div>
+<div id="msg"></div>
+<div id="noteView"><div><span id="noteText"></span><button id="noteClose">Close</button></div></div>
 <div id="crosshair"></div>
 <div id="mobileControls">
   <div id="joystick"><div id="joystickKnob"></div></div>
   <div id="lookZone"></div>
   <button id="btnFlash">FLASH</button>
-  <button id="btnAudio">AUDIO</button>
-  <button id="btnBrightUp">+</button>
-  <button id="btnBrightDown">−</button>
+  <button id="btnCrank">CRANK</button>
+  <button id="btnUse">USE</button>
+  <button id="btnCam">CAM</button>
   <button id="btnOptions" style="position:absolute;top:24px;left:24px;width:54px;height:54px;border-radius:50%;background:rgba(0,0,0,0.55);color:#fff;border:2px solid #666;pointer-events:auto;font-size:10px;">OPT</button>
 </div>
 
@@ -105,13 +118,37 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 
-const LOW_W = 160, LOW_H = 120, SPEED = 4.2;
+const LOW_W = 160, LOW_H = 120;
 const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
-// Rolling forest floor. One function: mesh, props, player, threats and rain all read it.
-const groundH = (x, z) =>
-  Math.sin(x * 0.35 + 1.3) * 0.5 + Math.cos(z * 0.28 + 0.5) * 0.6 +
-  Math.sin((x + z) * 0.6) * 0.2 + Math.sin(x * 1.3) * Math.cos(z * 1.1) * 0.12;
+// Facility layout. One character per 1.6 m cell. Row 0 is the north wall, facing the forest.
+// # wall  . floor  D exit door  S start  N note  T torch  K keycard  C camera  P breached pen  H howler
+const FAC_MAP = [
+  '#####D#####',
+  '#K..#C#..P#',
+  '#...#.#...#',
+  '#.###.#.###',
+  '#....H....#',
+  '###.#####.#',
+  '#...#.N.TS#',
+  '###########'
+];
+const ROWS = FAC_MAP.length, COLS = FAC_MAP[0].length;
+const CS = 1.6, FAC_X0 = -COLS * CS / 2, FAC_Z0 = 18.2, WALL_H = 3;
+const facOpen = FAC_MAP.map(row => [...row].map(ch => ch !== '#' && ch !== 'D')); // the door cell opens later
+const cellOf = (x, z) => [Math.floor((z - FAC_Z0) / CS), Math.floor((x - FAC_X0) / CS)];
+const cellCenter = (r, c) => [FAC_X0 + (c + 0.5) * CS, FAC_Z0 + (r + 0.5) * CS];
+const isOpen = (r, c) => !!(facOpen[r] && facOpen[r][c]);
+const findCell = ch => { const r = FAC_MAP.findIndex(row => row.includes(ch)); return [r, FAC_MAP[r].indexOf(ch)]; };
+
+// Rolling forest floor, flattened to 0 under and in front of the facility.
+// One function: mesh, props, player, creatures and rain all read it.
+const groundH = (x, z) => {
+  const f = Math.min(1, Math.max(0, (z - 13) / 4)), flat = f * f * (3 - 2 * f);
+  return (Math.sin(x * 0.35 + 1.3) * 0.5 + Math.cos(z * 0.28 + 0.5) * 0.6 +
+    Math.sin((x + z) * 0.6) * 0.2 + Math.sin(x * 1.3) * Math.cos(z * 1.1) * 0.12) * (1 - flat);
+};
+const fz = z => z > 14 ? z - 10 : z; // keep scattered clutter off the facility apron
 const EYE = 1.6;
 
 const canvas = document.createElement('canvas');
@@ -350,26 +387,26 @@ camera.position.set(0, groundH(0, 5) + EYE, 5);
 const ambient = new THREE.HemisphereLight(0x334455, 0x10160c, 0.55);
 scene.add(ambient);
 const moon = new THREE.DirectionalLight(0x8899bb, 0.45);
-moon.position.set(-14, 12, -10);
+moon.position.set(-31, 26.5, -22);
 moon.castShadow = true;
-moon.shadow.mapSize.set(1024, 1024);
-moon.shadow.camera.left = moon.shadow.camera.bottom = -26;
-moon.shadow.camera.right = moon.shadow.camera.top = 26;
+moon.shadow.mapSize.set(2048, 2048);
+moon.shadow.camera.left = moon.shadow.camera.bottom = -40;
+moon.shadow.camera.right = moon.shadow.camera.top = 40;
 moon.shadow.camera.near = 1;
-moon.shadow.camera.far = 60;
-moon.shadow.bias = -0.002;
+moon.shadow.camera.far = 120;
+moon.shadow.bias = -0.0004;
 moon.shadow.autoUpdate = false; // refreshed every 4th frame in animate()
 scene.add(moon);
 const sun = new THREE.DirectionalLight(0xaabb88, 0.65);
 sun.position.set(8, 12, 4);
 scene.add(sun);
 
-// Distant horror lights
-const redEye1 = new THREE.PointLight(0xff2200, 1.8, 8);
-redEye1.position.set(-7, groundH(-7, -6) + 1.2, -6);
+// Emergency lighting in the facility corridor
+const redEye1 = new THREE.PointLight(0xff4a20, 1.0, 9);
+redEye1.position.set(cellCenter(4, 3)[0], 2.6, cellCenter(4, 3)[1]);
 scene.add(redEye1);
-const redEye2 = new THREE.PointLight(0xaa0000, 1.2, 6);
-redEye2.position.set(8, groundH(8, 4) + 0.8, 4);
+const redEye2 = new THREE.PointLight(0xe03818, 0.8, 8);
+redEye2.position.set(cellCenter(4, 8)[0], 2.6, cellCenter(4, 8)[1]);
 scene.add(redEye2);
 
 const flashlight = new THREE.SpotLight(0xfff0dd, 25, 32, 0.5, 0.5, 1.5);
@@ -409,7 +446,11 @@ postMat.uniforms.flashCone.value.set(Math.cos(flashlight.angle), Math.cos(flashl
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-let flashlightOn = true, brightness = 1.0, battery = 100;
+let flashlightOn = false, brightness = 1.0, battery = 0;
+// Demo state. Everything a reload must put back lives here or in resetGame().
+const game = { started: false, hasTorch: false, hasCamera: false, hasKey: false, evidence: new Set(),
+  dead: false, won: false, wake: 0, shotCooldown: 0, flashT: 0, running: false };
+let eyeH = EYE;
 const baseAmb = 0.1, baseSun = 0.03, baseFlash = 320, baseMoon = 1.6;
 let lightning = 0, fogDensity = 0.03, jitterX = 0;
 let bobPhase = 0, bobAmt = 0, roll = 0;
@@ -427,7 +468,7 @@ function applyBright() {
   }
   flashlight.intensity = flash;
   document.getElementById('brightnessLabel').textContent =
-    `Brightness: ${Math.round(brightness * 100)}% | Battery: ${Math.round(battery)}%`;
+    `${game.hasTorch ? 'Torch ' + Math.round(battery) + '%' : 'No light'} | Evidence ${game.evidence.size}/3`;
 }
 applyBright();
 function changeBright(d) {
@@ -583,25 +624,9 @@ for (let i = 0; i < 18; i++) {
   const a = i / 18 * Math.PI * 2, r = 15 + Math.random() * 2;
   spots.push([Math.cos(a) * r, Math.sin(a) * r]);
 }
-spots.forEach(([x,z], i) => makeTree(x, z, 0.8 + Math.random()*0.5, i % 6 === 4 ? 'dead' : i % 3 === 2 ? 'broad' : 'pine'));
+spots.forEach(([x,z], i) => (z > 12.5 && Math.abs(x) < 5) || makeTree(x, z, 0.8 + Math.random()*0.5, i % 6 === 4 ? 'dead' : i % 3 === 2 ? 'broad' : 'pine'));
 
-// Distant threats
-const threats = [];
-for (let i = 0; i < 3; i++) {
-  const body = new THREE.Mesh(
-    new THREE.ConeGeometry(0.4, 1.6, 4),
-    new THREE.MeshBasicMaterial({ color: 0x110000 })
-  );
-  body.position.set((Math.random()-0.5)*24, 0.8, (Math.random()-0.5)*24);
-  const eye = new THREE.PointLight(0xff0000, 1.5, 5);
-  eye.position.y = 0.6;
-  body.add(eye);
-  body.castShadow = true;
-  scene.add(body);
-  threats.push({ mesh: body, speed: 0.4 + Math.random()*0.3, angle: Math.random()*Math.PI*2 });
-}
-
-const glowLights = [redEye1, redEye2, ...threats.map(t => t.mesh.children[0])]; // matches glowPos[5]
+const glowLights = [redEye1, redEye2]; // skulker eyes + outpost lamp join below; glowPos holds 5
 
 // Rain: streaks + ground splashes. Unlit HDR, brightest inside the flashlight beam.
 const rainMat = new THREE.ShaderMaterial({
@@ -656,7 +681,7 @@ scene.add(splashes);
 // Bushes
 for (let i = 0; i < 16; i++) {
   const b = new THREE.Mesh(new THREE.IcosahedronGeometry(0.35 + Math.random()*0.35, 0), bushMat);
-  b.position.set((Math.random()-0.5)*26, 0.3, (Math.random()-0.5)*26);
+  b.position.set((Math.random()-0.5)*26, 0.3, fz((Math.random()-0.5)*26));
   b.scale.y = 0.7 + Math.random() * 0.5;
   b.position.y += groundH(b.position.x, b.position.z);
   treeColliders.push({ x: b.position.x, z: b.position.z, r: b.geometry.parameters.radius * 0.8 });
@@ -666,7 +691,7 @@ for (let i = 0; i < 16; i++) {
 // Rocks
 for (let i = 0; i < 14; i++) {
   const r = new THREE.Mesh(new THREE.DodecahedronGeometry(0.25 + Math.random()*0.45, 0), rockMat);
-  r.position.set((Math.random()-0.5)*28, 0.15, (Math.random()-0.5)*28);
+  r.position.set((Math.random()-0.5)*28, 0.15, fz((Math.random()-0.5)*28));
   r.rotation.set(Math.random(), Math.random(), Math.random());
   r.position.y += groundH(r.position.x, r.position.z);
   treeColliders.push({ x: r.position.x, z: r.position.z, r: r.geometry.parameters.radius * 0.9 });
@@ -676,7 +701,7 @@ for (let i = 0; i < 14; i++) {
 // Fallen logs
 for (let i = 0; i < 6; i++) {
   const log = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.26, 2.5 + Math.random()*2, 6), trunkMat);
-  log.position.set((Math.random()-0.5)*26, 0.2, (Math.random()-0.5)*26);
+  log.position.set((Math.random()-0.5)*26, 0.2, fz((Math.random()-0.5)*26));
   log.position.y += groundH(log.position.x, log.position.z);
   const logAngle = Math.random() * 6, logLen = log.geometry.parameters.height;
   log.rotation.set(Math.PI / 2 + (Math.random()-0.5)*0.15, 0, logAngle);
@@ -692,7 +717,7 @@ for (let i = 0; i < 6; i++) {
   const tufts = new THREE.InstancedMesh(new THREE.ConeGeometry(0.07, 0.5, 3), grassMat, 700);
   const m = new THREE.Object3D();
   for (let i = 0; i < 700; i++) {
-    m.position.set((Math.random()-0.5)*35, 0.2, (Math.random()-0.5)*35);
+    m.position.set((Math.random()-0.5)*35, 0.2, fz((Math.random()-0.5)*35));
     m.position.y += groundH(m.position.x, m.position.z);
     m.rotation.set((Math.random()-0.5)*0.5, Math.random()*6, (Math.random()-0.5)*0.5);
     m.scale.setScalar(0.6 + Math.random()*0.9);
@@ -749,7 +774,7 @@ function initAudio() {
   osc.connect(filter).connect(ambientGain);
   osc.start();
 }
-function playFootstep() {
+function playFootstep(vol = 1) {
   if (!audioCtx) return;
   const osc = audioCtx.createOscillator();
   const g = audioCtx.createGain();
@@ -761,7 +786,7 @@ function playFootstep() {
   }
   osc.type = 'triangle';
   osc.frequency.value = 80 + Math.random()*40;
-  g.gain.setValueAtTime(0.12 * occlude, audioCtx.currentTime);
+  g.gain.setValueAtTime(0.12 * occlude * vol, audioCtx.currentTime);
   g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.12);
   osc.connect(g).connect(audioCtx.destination);
   osc.start();
@@ -874,6 +899,7 @@ function startGame() {
   initAudio();
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
   if (!isMobile) controls.lock();
+  if (!game.started) { game.started = true; startWake(); }
 }
 startBtn.addEventListener('click', startGame);
 startBtn.addEventListener('touchend', e => { e.preventDefault(); startGame(); }, { passive: false });
@@ -919,16 +945,20 @@ lookZone.addEventListener('touchmove', e => {
 }, { passive: false });
 lookZone.addEventListener('touchend', () => touchLook.active = false);
 
-document.getElementById('btnFlash').addEventListener('touchstart', e => { e.preventDefault(); flashlightOn = !flashlightOn; applyBright(); }, { passive: false });
-document.getElementById('btnFlash').addEventListener('click', () => { flashlightOn = !flashlightOn; applyBright(); });
-document.getElementById('btnBrightUp').addEventListener('touchstart', e => { e.preventDefault(); changeBright(0.12); }, { passive: false });
-document.getElementById('btnBrightDown').addEventListener('touchstart', e => { e.preventDefault(); changeBright(-0.12); }, { passive: false });
-document.getElementById('btnBrightUp').addEventListener('click', () => changeBright(0.12));
-document.getElementById('btnBrightDown').addEventListener('click', () => changeBright(-0.12));
-
-document.getElementById('btnAudio').addEventListener('click', () => {
-  if (audioCtx) audioCtx.state === 'running' ? audioCtx.suspend() : audioCtx.resume();
-});
+document.getElementById('btnFlash').addEventListener('touchstart', e => { e.preventDefault(); toggleTorch(); }, { passive: false });
+document.getElementById('btnFlash').addEventListener('click', () => { toggleTorch(); });
+let mobileCrank = false;
+const tapBtn = (id, fn) => {
+  const el = document.getElementById(id);
+  el.addEventListener('touchstart', e => { e.preventDefault(); fn(); }, { passive: false });
+  el.addEventListener('click', fn);
+};
+tapBtn('btnUse', () => interact());
+tapBtn('btnCam', () => takePhoto());
+document.getElementById('btnCrank').addEventListener('touchstart', e => { e.preventDefault(); mobileCrank = true; }, { passive: false });
+document.getElementById('btnCrank').addEventListener('touchend', () => { mobileCrank = false; });
+tapBtn('noteClose', () => interact());
+document.addEventListener('mousedown', e => { if (controls.isLocked && e.button === 0) takePhoto(); });
 document.getElementById('btnOptions').addEventListener('touchstart', e => {
   e.preventDefault();
   options.style.display = 'flex';
@@ -946,7 +976,8 @@ document.addEventListener('keydown', e => {
       else { options.style.display = 'flex'; if (controls.isLocked) controls.unlock(); }
     }
   }
-  if (e.code === 'KeyF') { flashlightOn = !flashlightOn; applyBright(); }
+  if (e.code === 'KeyF') { toggleTorch(); }
+  if (e.code === 'KeyE') interact();
   if (e.code === 'Equal' || e.code === 'NumpadAdd') changeBright(0.12);
   if (e.code === 'Minus' || e.code === 'NumpadSubtract') changeBright(-0.12);
 });
@@ -962,6 +993,481 @@ onResize();
 const clock = new THREE.Clock();
 const camFwd = new THREE.Vector3(), beamDir = new THREE.Vector3(0, 0, -1), camInv = new THREE.Quaternion();
 let frames = 0, lastFps = 0;
+// ===================== GAME LAYER: facility escape demo =====================
+// Rules live here; the renderer above knows nothing about them.
+const PACE = {
+  sneak: { speed: 1.5, stride: 0.6,  vol: 0.25, noise: 1.2 },
+  walk:  { speed: 3.0, stride: 0.45, vol: 1.0,  noise: 6 },
+  run:   { speed: 5.4, stride: 0.3,  vol: 1.6,  noise: 11 }
+};
+const NOISE_CRANK = 9, NOISE_SHUTTER = 12, NOISE_DOOR = 10;
+const CRANK_RATE = 12;              // % per second: a full wind takes over 8 s
+const HOWLER = { wander: 1.2, hunt: 4.4, catchDist: 0.95, listen: 3 };
+const SKULKER = { sense: 4.2, windup: 0.45, dive: 15, flee: 13, catchDist: 0.85, litRange: 15 };
+const OUTPOST = { x: 5, z: -13 };
+
+const wallMat  = pixelMat(0x6a6c68, 0.18, 16, 'rock');                                  // stained concrete
+const floorMat = pixelMat(0x4a4c4e, 0.15, 8, 'mud', { alt: 0x2e2a26, roughness: 0.5 }); // wet tile
+const doorMat  = pixelMat(0x5a3a2a, 0.25, 16, 'bark');                                  // rusted steel
+const skinMat  = pixelMat(0x9a8f88, 0.2, 8, 'leaf');                                    // howler: pale, never saw daylight
+const hideMat  = pixelMat(0x14181a, 0.3, 8, 'leaf');                                    // skulker: near black
+floorMat.map.repeat.set(COLS, ROWS);
+[wallMat, floorMat, doorMat, skinMat, hideMat].forEach(applyVertexSnap);
+const unlit = (r, g, b) => new THREE.MeshBasicMaterial({ color: new THREE.Color(r, g, b) });
+
+// ---------- facility shell
+{
+  const cells = [];
+  FAC_MAP.forEach((row, r) => [...row].forEach((ch, c) => { if (ch === '#') cells.push([r, c]); }));
+  const walls = new THREE.InstancedMesh(new THREE.BoxGeometry(CS, WALL_H + 0.25, CS), wallMat, cells.length);
+  const m = new THREE.Matrix4();
+  cells.forEach(([r, c], i) => { const [x, z] = cellCenter(r, c); walls.setMatrixAt(i, m.makeTranslation(x, (WALL_H + 0.25) / 2, z)); });
+  walls.castShadow = walls.receiveShadow = true;
+  const w = COLS * CS, d = ROWS * CS, cz = FAC_Z0 + d / 2;
+  const floor = new THREE.Mesh(new THREE.BoxGeometry(w, 0.1, d), floorMat);
+  floor.position.set(0, 0.02, cz);
+  floor.receiveShadow = true;
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.4, 0.3, d + 0.4), floorMat);
+  roof.position.set(0, WALL_H + 0.15, cz);
+  roof.castShadow = true;
+  scene.add(walls, floor, roof);
+}
+const doorCell = findCell('D');
+const door = new THREE.Mesh(new THREE.BoxGeometry(CS, WALL_H, 0.25), doorMat);
+door.castShadow = door.receiveShadow = true;
+scene.add(door);
+
+// ---------- things to find. label may be a function; use() returns nothing.
+const items = [];
+function addItem(ch, mesh, y, label, use, dx = 0) {
+  const [x, z] = cellCenter(...findCell(ch));
+  mesh.position.set(x + dx, y, z);
+  scene.add(mesh);
+  const it = { x: x + dx, z, mesh, label, use, active: true };
+  items.push(it);
+  return it;
+}
+const NOTE_TEXT = `If anyone finds this.
+
+Containment failed at 02:14. Every pen is open.
+
+The big ones are BLIND. They find you by sound. Walk softly. Do not run. Do not wind the torch anywhere near them.
+
+The small ones wait in the dark outside. They cannot stand light. Check the shadows before you walk into them.
+
+Keycard is in the west lab. Take the camera by the exit. Someone has to show the world what we made here.
+
+Outpost 2 is north, through the trees. Follow the green lamp.`;
+const paper = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.4), unlit(0.5, 0.48, 0.4));
+paper.rotation.x = -Math.PI / 2;
+addItem('N', paper, 0.09, 'Read note', () => openNote(NOTE_TEXT));
+{
+  // the colleague who wrote it
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.28, 0.5), pixelMat(0x8c8c84, 0.2, 8));
+  const [x, z] = cellCenter(...findCell('N'));
+  body.position.set(x - 0.2, 0.2, z + 0.55);
+  body.rotation.y = 0.3;
+  body.castShadow = body.receiveShadow = true;
+  scene.add(body);
+}
+const torchMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 0.32, 6), unlit(0.5, 0.4, 0.12));
+torchMesh.rotation.z = Math.PI / 2;
+const torchItem = addItem('T', torchMesh, 0.12, 'Take torch', () => {
+  game.hasTorch = true; battery = 30; flashlightOn = true;
+  say('Hold R to wind the torch. It is slow, and it is loud.', 6);
+});
+const keyItem = addItem('K', new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.03, 0.14), unlit(0.15, 0.35, 0.9)), 0.1, 'Take keycard', () => {
+  game.hasKey = true;
+  say('Keycard. The exit is at the north end.');
+});
+const camMesh = new THREE.Group();
+camMesh.add(new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.18, 0.14), unlit(0.3, 0.3, 0.34)));
+const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.12, 8), unlit(0.1, 0.25, 0.3));
+lens.rotation.x = Math.PI / 2;
+lens.position.z = 0.1;
+camMesh.add(lens);
+const camItem = addItem('C', camMesh, 0.14, 'Take camera', () => {
+  game.hasCamera = true;
+  say(isMobile ? 'CAM takes a photograph. The flash is loud.' : 'Left click takes a photograph. The flash is loud.', 6);
+}, 0.5);
+const doorItem = addItem('D', door, WALL_H / 2, () => game.hasKey ? 'Open door' : 'Locked. Needs a keycard', () => {
+  if (!game.hasKey) { tone(200, 150, 0.15, 'square', 0.1); return true; } // true = stays usable
+  facOpen[doorCell[0]][doorCell[1]] = true;
+  door.position.y = WALL_H * 1.45; // slides up into the roof
+  tone(120, 60, 0.6, 'sawtooth', 0.25);
+  makeNoise(doorItem.x, doorItem.z + CS, NOISE_DOOR);
+  say('Outpost 2 is north, through the trees. Follow the green lamp.', 7);
+});
+const pen = new THREE.Group(); // torn-open holding pen: evidence, not an item
+for (let i = 0; i < 6; i++) {
+  const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 2.6, 5), doorMat);
+  bar.position.set(-0.6 + i * 0.22, 1.3, -0.5 + (i % 2) * 0.15);
+  bar.rotation.set((Math.random() - 0.5) * 0.9, 0, (i - 2.5) * 0.28);
+  bar.castShadow = true;
+  pen.add(bar);
+}
+{ const [x, z] = cellCenter(...findCell('P')); pen.position.set(x, 0, z); scene.add(pen); }
+
+// ---------- outpost: the way out of the demo
+const lamp = new THREE.PointLight(0x9fe8b8, 2.2, 11);
+{
+  const hut = new THREE.Mesh(new THREE.BoxGeometry(3, 2.6, 3), wallMat);
+  hut.position.set(OUTPOST.x, groundH(OUTPOST.x, OUTPOST.z) + 1.2, OUTPOST.z);
+  hut.castShadow = hut.receiveShadow = true;
+  lamp.position.set(OUTPOST.x, groundH(OUTPOST.x, OUTPOST.z) + 3, OUTPOST.z + 1.8);
+  const bulb = new THREE.Mesh(new THREE.IcosahedronGeometry(0.09, 0), unlit(1.5, 3, 2));
+  bulb.position.copy(lamp.position);
+  scene.add(hut, lamp, bulb);
+  treeColliders.push({ x: OUTPOST.x, z: OUTPOST.z, r: 1.9 });
+}
+
+// ---------- where the player can stand
+function walkable(x, z) {
+  if (Math.abs(x) > 17.5 || z < -17.5) return false;
+  if (z < FAC_Z0 - 0.3) return true; // forest
+  // facility: the grid decides. Rows above the map are the ground outside the front wall.
+  return [[-0.3, -0.3], [0.3, -0.3], [-0.3, 0.3], [0.3, 0.3]].every(([ox, oz]) => {
+    const [r, c] = cellOf(x + ox, z + oz);
+    return r < 0 || isOpen(r, c);
+  });
+}
+function canStand(x, z, px, pz) {
+  if (!walkable(x, z)) return false;
+  for (const c of treeColliders) {
+    const dx = x - c.x, dz = z - c.z, ox = px - c.x, oz = pz - c.z;
+    // block only moves that go deeper in: a player who starts inside clutter can always walk out
+    if (dx * dx + dz * dz < c.r * c.r && dx * dx + dz * dz < ox * ox + oz * oz) return false;
+  }
+  return true;
+}
+// straight line clear of facility walls? (trees do not block sight: shortcut, add when it matters)
+function los(ax, az, bx, bz) {
+  const n = Math.ceil(Math.hypot(bx - ax, bz - az) / 0.3);
+  for (let i = 1; i < n; i++) {
+    const [r, c] = cellOf(ax + (bx - ax) * i / n, az + (bz - az) * i / n);
+    if (r >= 0 && r < ROWS && !isOpen(r, c)) return false;
+  }
+  return true;
+}
+
+// ---------- sound: small synthesized cues
+function tone(f0, f1, dur, type = 'sine', vol = 0.2) {
+  if (!audioCtx || vol < 0.004) return;
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain(), t = audioCtx.currentTime;
+  o.type = type;
+  o.frequency.setValueAtTime(f0, t);
+  o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.connect(g).connect(audioCtx.destination);
+  o.start();
+  o.stop(t + dur);
+}
+const near = d => 1 / (1 + d * d * 0.03); // loudness of a creature at distance d
+// every loud thing the player does goes through here
+function makeNoise(x, z, radius) {
+  if (Math.hypot(howler.x - x, howler.z - z) < radius) howlerHear(x, z);
+}
+
+// ---------- HUD
+const fadeEl = document.getElementById('fade'), shotEl = document.getElementById('shot');
+const promptEl = document.getElementById('prompt'), msgEl = document.getElementById('msg');
+const noteView = document.getElementById('noteView'), noteText = document.getElementById('noteText');
+let noteOpen = false, msgUntil = 0, crankTimer = 0;
+function say(text, secs = 4) { msgEl.textContent = text; msgUntil = clock.elapsedTime + secs; }
+function openNote(text) {
+  noteText.textContent = text;
+  noteView.style.display = 'flex';
+  noteOpen = true;
+  return true; // can be read again
+}
+function setFade(color, opacity, secs) {
+  fadeEl.style.transition = 'none';
+  fadeEl.style.background = color;
+  void fadeEl.offsetWidth; // restart the transition
+  fadeEl.style.transition = `opacity ${secs}s`;
+  fadeEl.style.opacity = opacity;
+}
+function startWake() {
+  game.wake = 0;
+  fadeEl.style.transition = 'none';
+  fadeEl.style.background = '#000';
+  fadeEl.style.opacity = 1;
+  void fadeEl.offsetWidth;
+  fadeEl.style.transition = 'opacity 5s';
+  fadeEl.style.opacity = 0;
+  say('Emergency lighting. No power. Find a light.', 7);
+}
+function toggleTorch() {
+  if (!game.hasTorch) return;
+  flashlightOn = !flashlightOn;
+  applyBright();
+}
+function interact() {
+  if (game.won) return location.reload(); // the end card's button
+  if (noteOpen) { noteOpen = false; noteView.style.display = 'none'; return; }
+  if (game.dead || game.won || overlay.style.display !== 'none') return;
+  const it = nearestItem();
+  if (!it) return;
+  if (!it.use()) { // falsy = taken
+    it.active = false;
+    if (it !== doorItem) it.mesh.visible = false;
+    tone(600, 900, 0.08, 'sine', 0.1);
+  }
+}
+function nearestItem() {
+  let best = null, bd = 1.9;
+  for (const it of items) {
+    const d = Math.hypot(it.x - camera.position.x, it.z - camera.position.z);
+    if (it.active && d < bd) { best = it; bd = d; }
+  }
+  return best;
+}
+
+// ---------- camera: the evidence, and a loud bright mistake
+const flashBulb = new THREE.PointLight(0xffffff, 0, 16);
+camera.add(flashBulb);
+const EVIDENCE = [
+  { id: 'howler',  name: 'the blind one',      range: 12, pos: () => [howler.x, howler.z] },
+  { id: 'skulker', name: 'the one that waits', range: 12, pos: () => nearestSkulker() },
+  { id: 'breach',  name: 'the breached pen',   range: 7,  pos: () => [pen.position.x, pen.position.z] }
+];
+function inView(x, z, range) {
+  const dx = x - camera.position.x, dz = z - camera.position.z, d = Math.hypot(dx, dz);
+  camera.getWorldDirection(camFwd);
+  return d < range && (dx * camFwd.x + dz * camFwd.z) / (d || 1) > 0.82 && los(camera.position.x, camera.position.z, x, z);
+}
+function nearestSkulker() {
+  const s = skulkers.slice().sort((a, b) =>
+    Math.hypot(a.x - camera.position.x, a.z - camera.position.z) - Math.hypot(b.x - camera.position.x, b.z - camera.position.z))[0];
+  return [s.x, s.z];
+}
+function takePhoto() {
+  if (!game.hasCamera || game.shotCooldown > 0 || game.dead || game.won || noteOpen || overlay.style.display !== 'none') return;
+  game.shotCooldown = 1.2;
+  game.flashT = 0.12;
+  shotEl.style.transition = 'none'; shotEl.style.opacity = 0.7; void shotEl.offsetWidth;
+  shotEl.style.transition = 'opacity 0.4s'; shotEl.style.opacity = 0;
+  tone(1400, 200, 0.08, 'square', 0.15);
+  makeNoise(camera.position.x, camera.position.z, NOISE_SHUTTER);
+  const got = EVIDENCE.filter(e => !game.evidence.has(e.id) && inView(...e.pos(), e.range));
+  got.forEach(e => game.evidence.add(e.id));
+  say(got.length ? `Evidence logged: ${got.map(e => e.name).join(', ')}. (${game.evidence.size}/3)` : 'Nothing worth recording.', 3);
+}
+
+// ---------- the howler: blind, big, hunts sound through the facility
+const howler = { g: new THREE.Group(), x: 0, z: 0, face: 0, state: 'wander', path: [], point: null, wait: 0, click: 0 };
+{
+  const part = (geo, x, y, z, sx = 1, sy = 1, sz = 1) => {
+    const m = new THREE.Mesh(geo, skinMat);
+    m.position.set(x, y, z); m.scale.set(sx, sy, sz);
+    m.castShadow = true;
+    howler.g.add(m);
+    return m;
+  };
+  part(new THREE.IcosahedronGeometry(0.45, 1), 0, 1.05, 0, 0.8, 0.9, 1.5);            // hunched body
+  part(new THREE.CylinderGeometry(0.11, 0.16, 0.7, 6), 0, 1.4, 0.55).rotation.x = 0.9; // neck, forward
+  howler.head = part(new THREE.IcosahedronGeometry(0.24, 1), 0, 1.62, 0.9, 0.85, 0.8, 1.4); // eyeless head
+  [-1, 1].forEach(s => {
+    part(new THREE.ConeGeometry(0.2, 0.6, 6), s * 0.26, 1.82, 0.78).rotation.set(-0.5, 0, -s * 0.9); // sonar crests
+    part(new THREE.CylinderGeometry(0.07, 0.1, 0.95, 5), s * 0.24, 0.47, -0.1);                      // legs
+    part(new THREE.CylinderGeometry(0.035, 0.05, 0.6, 4), s * 0.3, 0.95, 0.5).rotation.x = 0.6;      // forearms
+  });
+  part(new THREE.ConeGeometry(0.16, 1.3, 5), 0, 1.0, -1.1).rotation.x = -1.75;         // tail
+  scene.add(howler.g);
+}
+// breadth-first route over open cells; never enters row 0, so it cannot leave by the door
+function route(from, to) {
+  const key = (r, c) => r * COLS + c, prev = new Map([[key(...from), null]]), queue = [from];
+  while (queue.length) {
+    const [r, c] = queue.shift();
+    if (r === to[0] && c === to[1]) break;
+    for (const [dr, dc] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nr = r + dr, nc = c + dc;
+      if (nr < 1 || !isOpen(nr, nc) || prev.has(key(nr, nc))) continue;
+      prev.set(key(nr, nc), [r, c]);
+      queue.push([nr, nc]);
+    }
+  }
+  const path = [];
+  for (let cur = prev.has(key(...to)) ? to : null; cur; cur = prev.get(key(...cur))) path.unshift(cur);
+  return path; // starts with its own cell: it re-centres before turning, so it never clips a corner
+}
+function howlerHear(x, z) {
+  let [r, c] = cellOf(x, z);
+  const inside = r >= 1;
+  r = Math.max(1, r);
+  if (!isOpen(r, c)) return;
+  if (howler.state !== 'hunt') tone(170, 430, 0.7, 'sawtooth', 0.35 * near(Math.hypot(howler.x - x, howler.z - z)));
+  howler.state = 'hunt';
+  howler.path = route(cellOf(howler.x, howler.z), [r, c]);
+  howler.point = inside ? [x, z] : null; // the exact spot the sound came from
+  howler.wait = 0;
+}
+function updateHowler(dt, px, pz) {
+  const h = howler, d = Math.hypot(px - h.x, pz - h.z);
+  if ((h.click -= dt) <= 0) { // echolocation: you hear it coming
+    h.click = h.state === 'hunt' ? 0.4 : 1.5;
+    tone(2600, 1700, 0.03, 'square', 0.22 * near(d));
+  }
+  if (d < HOWLER.catchDist) return caught();
+  const goal = h.path.length ? cellCenter(...h.path[0]) : h.point;
+  if (goal) {
+    const gx = goal[0] - h.x, gz = goal[1] - h.z, gd = Math.hypot(gx, gz), step = HOWLER[h.state] * dt;
+    if (gd <= step) {
+      h.x = goal[0]; h.z = goal[1];
+      if (h.path.length) h.path.shift(); else h.point = null;
+      if (!h.path.length && !h.point) { // arrived: stand and listen
+        h.wait = h.state === 'hunt' ? HOWLER.listen : 1.5 + Math.random() * 2.5;
+        h.state = 'wander';
+      }
+    } else {
+      h.x += gx / gd * step; h.z += gz / gd * step;
+      h.face = Math.atan2(gx, gz);
+    }
+  } else if ((h.wait -= dt) <= 0) {
+    let r, c;
+    do { r = 1 + Math.floor(Math.random() * (ROWS - 2)); c = 1 + Math.floor(Math.random() * (COLS - 2)); } while (!isOpen(r, c));
+    h.path = route(cellOf(h.x, h.z), [r, c]);
+  }
+  const t = clock.elapsedTime, moving = !!goal;
+  h.g.position.set(h.x, moving ? Math.abs(Math.sin(t * (h.state === 'hunt' ? 12 : 5))) * 0.06 : 0, h.z);
+  let turn = h.face - h.g.rotation.y;
+  turn = Math.atan2(Math.sin(turn), Math.cos(turn));
+  h.g.rotation.y += turn * Math.min(1, dt * 8);
+  h.head.rotation.y = moving ? 0 : Math.sin(t * 1.7) * 0.9; // standing still, it sweeps its head to listen
+}
+
+// ---------- the skulker: waits in the dark, dives at anything close, flees light
+// dark points sit at the foot of trees on and around the route north
+const DARK = [[2.9, 10.3], [-5.8, 5.5], [7.8, 5.6], [-3.8, -9.3], [6.6, -6.4], [-9.2, 0.6], [10.4, -2.5], [1.7, -10.6], [-8.5, -7.4], [0.8, 6.5]];
+const skulkers = [0, 4].map(home => {
+  const s = { g: new THREE.Group(), home, at: home, x: 0, z: 0, state: 'hide', t: 0, tx: 0, tz: 0, face: 0,
+    eye: Object.assign(new THREE.Object3D(), { color: new THREE.Color(0xffa030), intensity: 0.1 }), eyeMat: unlit(0.25, 0.12, 0.02) };
+  const part = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = mat !== s.eyeMat; s.g.add(m); return m; };
+  part(new THREE.IcosahedronGeometry(0.3, 1), hideMat, 0, 0.36, 0).scale.set(0.7, 0.5, 2.0);       // long low body
+  part(new THREE.ConeGeometry(0.15, 0.55, 5), hideMat, 0, 0.42, 0.85).rotation.x = Math.PI / 2;    // narrow head
+  part(new THREE.ConeGeometry(0.11, 1.3, 5), hideMat, 0, 0.36, -1.15).rotation.x = -Math.PI / 2;   // whip tail
+  [-1, 1].forEach(sd => {
+    part(new THREE.IcosahedronGeometry(0.035, 0), s.eyeMat, sd * 0.07, 0.47, 0.82);
+    [0.35, -0.35].forEach(lz => { part(new THREE.CylinderGeometry(0.03, 0.02, 0.5, 4), hideMat, sd * 0.28, 0.2, lz).rotation.z = sd * 0.8; });
+  });
+  s.eye.position.set(0, 0.47, 0.85);
+  s.g.add(s.eye);
+  scene.add(s.g);
+  glowLights.push(s.eye);
+  return s;
+});
+glowLights.push(lamp);
+function skulkerFlee(s, px, pz) {
+  const taken = skulkers.map(o => o.at);
+  const far = DARK.map((p, i) => ({ i, d: Math.hypot(p[0] - px, p[1] - pz) })).filter(o => !taken.includes(o.i)).sort((a, b) => b.d - a.d);
+  const ok = far.filter(o => o.d > 8);
+  const pick = ok.length ? ok[Math.floor(Math.random() * ok.length)] : far[0];
+  s.at = pick.i;
+  [s.tx, s.tz] = DARK[pick.i];
+  if (s.state !== 'flee') tone(1100, 320, 0.35, 'sawtooth', 0.3 * near(Math.hypot(s.x - px, s.z - pz)));
+  s.state = 'flee';
+}
+function updateSkulker(s, dt, px, pz) {
+  const dx = px - s.x, dz = pz - s.z, d = Math.hypot(dx, dz);
+  // lit = inside the torch beam, or caught by the camera flash
+  const beam = flashlight.intensity > 0 && d < SKULKER.litRange && -(dx * beamDir.x + dz * beamDir.z) / (d || 1) > Math.cos(flashlight.angle);
+  const lit = beam || (game.flashT > 0 && inView(s.x, s.z, 14));
+  if (s.state === 'hide') {
+    s.face = Math.atan2(dx, dz); // it watches you
+    if (lit) skulkerFlee(s, px, pz);
+    else if (pz < FAC_Z0 && d < SKULKER.sense) { s.state = 'windup'; s.t = SKULKER.windup; tone(3200, 1800, 0.4, 'sawtooth', 0.12); }
+  } else if (s.state === 'windup') {
+    if (lit) skulkerFlee(s, px, pz);
+    else if ((s.t -= dt) <= 0) { // commits to where you are now, and overshoots
+      s.tx = px + dx / d * 1.5; s.tz = pz + dz / d * 1.5;
+      s.state = 'dive';
+    }
+  } else {
+    const gx = s.tx - s.x, gz = s.tz - s.z, gd = Math.hypot(gx, gz), step = SKULKER[s.state] * dt;
+    if (s.state === 'dive' && d < SKULKER.catchDist) return caught();
+    if (gd <= step) {
+      s.x = s.tx; s.z = s.tz;
+      if (s.state === 'dive') skulkerFlee(s, px, pz); // missed
+      else s.state = 'hide';
+    } else {
+      s.x += gx / gd * step; s.z += gz / gd * step;
+      s.face = Math.atan2(gx, gz);
+    }
+  }
+  const hot = s.state === 'windup' || s.state === 'dive';
+  s.eyeMat.color.setRGB(hot ? 3 : 0.25, hot ? 1.4 : 0.12, hot ? 0.2 : 0.02);
+  s.eye.intensity = hot ? 1.2 : 0.1;
+  s.g.position.set(s.x, groundH(s.x, s.z) + (s.state === 'hide' ? -0.12 : 0), s.z); // pressed low while hiding
+  s.g.rotation.y = s.face;
+}
+
+// ---------- caught, reload, win
+function caught() {
+  if (game.dead) return;
+  game.dead = true;
+  tone(90, 40, 1.2, 'sawtooth', 0.4);
+  setFade('#400', 0.92, 0.25);
+  say('CAUGHT', 3);
+  setTimeout(() => { resetGame(); startWake(); }, 2300);
+}
+// Back to the last save. The lab is the only save in the demo, so everything since waking is lost.
+function resetGame() {
+  Object.assign(game, { hasTorch: false, hasCamera: false, hasKey: false, dead: false, won: false, wake: 0, shotCooldown: 0, flashT: 0 });
+  game.evidence.clear();
+  flashlightOn = false; battery = 0; eyeH = EYE;
+  noteOpen = false; noteView.style.display = 'none';
+  items.forEach(it => { it.active = true; it.mesh.visible = true; });
+  facOpen[doorCell[0]][doorCell[1]] = false;
+  door.position.y = WALL_H / 2;
+  const [sx, sz] = cellCenter(...findCell('S'));
+  camera.position.set(sx, EYE, sz);
+  camera.quaternion.setFromEuler(camEuler.set(0, Math.PI / 2, 0, 'YXZ')); // facing the note and the torch
+  beamDir.set(-1, 0, 0);
+  [howler.x, howler.z] = cellCenter(...findCell('H'));
+  Object.assign(howler, { state: 'wander', path: [], point: null, wait: 6, click: 2 });
+  howler.g.position.set(howler.x, 0, howler.z);
+  skulkers.forEach(s => { s.at = s.home; [s.x, s.z] = DARK[s.home]; s.state = 'hide'; });
+  applyBright();
+}
+function win() {
+  game.won = true;
+  if (controls.isLocked) controls.unlock();
+  overlay.style.display = 'none';
+  noteText.textContent = `Outpost 2. The keycard works. The door seals behind you.\n\nDEMO COMPLETE\nEvidence recorded: ${game.evidence.size}/3`;
+  document.getElementById('noteClose').textContent = 'Play again';
+  noteView.style.display = 'flex';
+}
+
+function updateGame(dt, live, active) {
+  const px = camera.position.x, pz = camera.position.z;
+  if (live) { game.wake += dt; game.shotCooldown -= dt; }
+  game.flashT -= dt;
+  flashBulb.intensity = game.flashT > 0 ? 90 : 0;
+  if (clock.elapsedTime > msgUntil) msgEl.textContent = '';
+
+  // winding the torch: slow, loud, and not while running
+  if (active && game.hasTorch && (keys['KeyR'] || mobileCrank) && !game.running) {
+    battery = Math.min(100, battery + CRANK_RATE * dt);
+    if ((crankTimer += dt) > 0.22) {
+      crankTimer = 0;
+      tone(300 + Math.random() * 90, 190, 0.05, 'square', 0.08);
+      makeNoise(px, pz, NOISE_CRANK);
+    }
+  }
+  const it = active && nearestItem();
+  promptEl.textContent = it ? `${isMobile ? 'USE' : 'E'}: ${typeof it.label === 'function' ? it.label() : it.label}` : '';
+
+  if (!live) return; // paused, dead or finished: the creatures hold still
+  updateHowler(dt, px, pz);
+  skulkers.forEach(s => updateSkulker(s, dt, px, pz));
+  if (!game.dead && Math.hypot(px - OUTPOST.x, pz - (OUTPOST.z + 1.9)) < 1.4) win();
+}
+resetGame();
+window.demo = { game, camera, howler, skulkers, items, DARK, OUTPOST, cellCenter, findCell, makeNoise, takePhoto, interact,
+  get battery() { return battery; }, set battery(v) { battery = v; } }; // handle for tests and tuning
+
 function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.1);
@@ -974,12 +1480,12 @@ function animate() {
     camera.position.x -= jitterX;
     jitterX = (Math.random() - 0.5) * 0.004;
     camera.position.x += jitterX;
-    camera.position.y = groundH(camera.position.x, camera.position.z) + EYE + (Math.random() - 0.5) * 0.003 + Math.sin(bobPhase) * 0.045 * bobAmt;
+    camera.position.y = groundH(camera.position.x, camera.position.z) + eyeH + (Math.random() - 0.5) * 0.003 + Math.sin(bobPhase) * 0.045 * bobAmt;
   }
 
-  // Pulse the distant red lights
-  redEye1.intensity = 1.4 + Math.sin(clock.elapsedTime * 3.5) * 0.6;
-  redEye2.intensity = 0.9 + Math.sin(clock.elapsedTime * 2.1 + 1) * 0.4;
+  // Emergency lights: one pulses, one is failing
+  redEye1.intensity = 14 + Math.sin(clock.elapsedTime * 3.5) * 5;
+  redEye2.intensity = (12 + Math.sin(clock.elapsedTime * 2.1 + 1) * 4) * (Math.random() < 0.06 ? 0.15 : 1);
 
   // Animated fog
   scene.fog.density = fogDensity * (1 + Math.sin(clock.elapsedTime * 0.15) * 0.2);
@@ -1006,58 +1512,57 @@ function animate() {
   }
   applyBright();
 
-  // Movement + collision + footsteps
-  let moved = false, strafe = 0;
-  if (playing && overlay.style.display === 'none') {
+  // Movement + collision + footsteps. Sneaking is slow and near silent; running is fast and loud.
+  let moved = false, strafe = 0, mode = 'walk';
+  const live = playing && overlay.style.display === 'none' && !game.dead && !game.won;
+  const active = live && !noteOpen && game.wake > 1.5;
+  if (active) {
     const dir = new THREE.Vector3();
-    if (isMobile) { dir.x = mobileMove.x; dir.z = mobileMove.z; }
-    else {
+    if (isMobile) {
+      dir.x = mobileMove.x; dir.z = mobileMove.z;
+      const m = dir.length(); // how far the stick is pushed picks the pace
+      mode = m < 0.45 ? 'sneak' : m > 0.95 ? 'run' : 'walk';
+    } else {
       if (keys['KeyW'] || keys['ArrowUp']) dir.z -= 1;
       if (keys['KeyS'] || keys['ArrowDown']) dir.z += 1;
       if (keys['KeyA'] || keys['ArrowLeft']) dir.x -= 1;
       if (keys['KeyD'] || keys['ArrowRight']) dir.x += 1;
+      mode = keys['KeyC'] ? 'sneak' : (keys['ShiftLeft'] || keys['ShiftRight']) ? 'run' : 'walk';
     }
     if (dir.lengthSq()) {
-      if (dir.lengthSq() > 1) dir.normalize(); // keep analog stick magnitude
+      dir.normalize();
+      const pace = PACE[mode], step = pace.speed * Math.min(1, game.wake / 5) * dt; // groggy at first
       // move in camera space, then test the real world position
       const px = camera.position.x, pz = camera.position.z;
-      controls.moveRight(dir.x * SPEED * dt);
-      controls.moveForward(-dir.z * SPEED * dt);
-      const nextX = camera.position.x, nextZ = camera.position.z;
-      let blocked = Math.abs(nextX) > 17.5 || Math.abs(nextZ) > 17.5; // ground edge
-      for (const c of treeColliders) {
-        const dx = nextX - c.x, dz = nextZ - c.z;
-        const ox = px - c.x, oz = pz - c.z;
-        // block only moves that go deeper in: a player who starts inside clutter can always walk out
-        if (dx*dx + dz*dz < c.r * c.r && dx*dx + dz*dz < ox*ox + oz*oz) { blocked = true; break; }
-      }
-      if (blocked) { camera.position.x = px; camera.position.z = pz; }
-      else {
+      controls.moveRight(dir.x * step);
+      controls.moveForward(-dir.z * step);
+      const nx = camera.position.x, nz = camera.position.z;
+      // slide along walls: the full move first, then each axis alone
+      const spot = [[nx, nz], [nx, pz], [px, nz]].find(([x, z]) => canStand(x, z, px, pz));
+      camera.position.x = spot ? spot[0] : px;
+      camera.position.z = spot ? spot[1] : pz;
+      if (spot) {
         moved = true; strafe = dir.x;
         footstepTimer += dt;
-        if (footstepTimer > 0.45) { playFootstep(); footstepTimer = 0; }
+        if (footstepTimer > pace.stride) {
+          footstepTimer = 0;
+          playFootstep(pace.vol);
+          makeNoise(camera.position.x, camera.position.z, pace.noise);
+        }
       }
     }
   }
+  game.running = moved && mode === 'run';
+  const crouched = active && mode === 'sneak' && (!isMobile || moved);
+  eyeH += ((crouched ? 1.05 : EYE) - eyeH) * Math.min(1, dt * 8);
 
   // Head bob (one dip per footstep) + lean into strafes
   bobAmt += ((moved ? 1 : 0) - bobAmt) * Math.min(1, dt * 8);
   if (moved) bobPhase += dt * 14;
   roll += (-strafe * 0.03 - roll) * Math.min(1, dt * 6);
   camEuler.setFromQuaternion(camera.quaternion, 'YXZ');
-  camEuler.z = roll;
+  camEuler.z = roll + Math.sin(game.wake * 2.2) * 0.12 * Math.max(0, 1 - game.wake / 5); // waking, unsteady
   camera.quaternion.setFromEuler(camEuler);
-
-  // Threats wander
-  threats.forEach(t => {
-    t.angle += dt * 0.25;
-    t.mesh.position.x += Math.cos(t.angle) * t.speed * dt;
-    t.mesh.position.z += Math.sin(t.angle) * t.speed * dt;
-    t.mesh.position.y = groundH(t.mesh.position.x, t.mesh.position.z) + 0.8;
-    const dist = camera.position.distanceTo(t.mesh.position);
-    const light = t.mesh.children[0];
-    if (light) light.intensity = (dist < 10 && flashlightOn) ? 0.25 : 1.4;
-  });
 
   // Flashlight: the beam trails the view and sways in the hand
   camera.getWorldDirection(camFwd);
@@ -1067,6 +1572,8 @@ function animate() {
   flashlight.target.position.y += Math.sin(clock.elapsedTime * 1.9) * 0.012;
   postMat.uniforms.flashDir.value.copy(flashlight.target.position).normalize();
   flashlight.target.position.add(flashlight.position);
+
+  updateGame(dt, live, active);
 
   // Rain streaks; each one that lands leaves a short splash
   const rpos = rain.geometry.attributes.position.array;
@@ -1100,7 +1607,7 @@ function animate() {
   });
   postMat.uniforms.flashOn.value = Math.min(1, flashlight.intensity / baseFlash); // follows flicker
   postMat.uniforms.battery.value = battery / 100.0;
-  postMat.uniforms.lightning.value = lightning > 0 ? 1.0 : 0.0;
+  postMat.uniforms.lightning.value = (lightning > 0 || game.flashT > 0) ? 1.0 : 0.0;
   postMat.uniforms.moonMap.value = moon.shadow.map && moon.shadow.map.texture;
   quad.material = postMat;
   renderer.setRenderTarget(crushRT);
