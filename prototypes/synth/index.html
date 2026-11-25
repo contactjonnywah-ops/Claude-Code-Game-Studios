@@ -1,0 +1,82 @@
+<!doctype html>
+<!-- PROTOTYPE - NOT FOR PRODUCTION -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Synth demo</title>
+<style>
+  body { font: 15px system-ui, sans-serif; background: #15151c; color: #e8e8f0; margin: 0; padding: 24px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p { color: #9a9ab0; margin: 0 0 16px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  button { font: inherit; padding: 10px 14px; border: 1px solid #3a3a4c; border-radius: 6px; background: #22222e; color: inherit; cursor: pointer; }
+  button[aria-pressed="true"] { background: #4a3fd0; border-color: #6a5ff0; }
+  button:focus-visible { outline: 2px solid #8f86ff; outline-offset: 2px; }
+</style>
+</head>
+<body>
+<h1>Synth demo</h1>
+<p>Pick a preset. Play it with the keys A W S E D F T G Y H U J K, or click "Hear it".</p>
+<div class="row" id="presets" role="group" aria-label="Preset"></div>
+<div class="row">
+  <button id="hear">Hear it</button>
+  <button id="song" aria-pressed="false">Play demo loop</button>
+</div>
+<script src="synth.js"></script>
+<script>
+  const synth = new Synth();
+  let preset = 'supersaw';
+  const box = document.getElementById('presets');
+  for (const name of Object.keys(synth.presets)) {
+    const b = document.createElement('button');
+    b.textContent = name;
+    b.setAttribute('aria-pressed', name === preset);
+    b.onclick = () => {
+      preset = name;
+      box.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', x === b));
+      synth.play(preset, 'C4', 0.4);
+    };
+    box.append(b);
+  }
+  document.getElementById('hear').onclick = () =>
+    ['C4', 'E4', 'G4', 'C5'].forEach((n, i) => synth.play(preset, n, 0.3, synth.now + i * 0.2));
+
+  // Computer keyboard: one octave from C4, held while the key is down.
+  const held = {};
+  document.onkeydown = (e) => {
+    const i = 'awsedftgyhujk'.indexOf(e.key.toLowerCase());
+    if (i < 0 || e.repeat || held[e.key]) return;
+    held[e.key] = synth.play(preset, 60 + i, null);
+  };
+  document.onkeyup = (e) => { held[e.key]?.stop(); delete held[e.key]; };
+
+  // Demo loop: scheduled one bar ahead, the standard look-ahead pattern.
+  const songBtn = document.getElementById('song');
+  let timer = null;
+  songBtn.onclick = () => {
+    if (timer) { clearInterval(timer); timer = null; synth.stopAll(); songBtn.setAttribute('aria-pressed', false); return; }
+    songBtn.setAttribute('aria-pressed', true);
+    const beat = 60 / 110, chords = [['A3', 'C4', 'E4'], ['F3', 'A3', 'C4'], ['C3', 'E3', 'G3'], ['G3', 'B3', 'D4']];
+    let bar = 0, next = synth.now + 0.1;
+    const schedule = () => {
+      while (next < synth.now + beat * 4) {
+        const ch = chords[bar % 4];
+        ch.forEach((n) => synth.play('pad', n, beat * 4, next, 0.7));
+        for (let i = 0; i < 8; i++) {
+          const t = next + i * beat / 2;
+          synth.play('hat', 'C4', 0.05, t, i % 2 ? 0.5 : 1);
+          synth.play('bass', ch[0].replace(/\d/, (o) => o - 1), beat / 2.2, t);
+          if (i % 4 === 0) synth.play('kick', 'A1', 0.3, t);
+          if (i % 4 === 2) synth.play('snare', 'D3', 0.2, t);
+          if (bar % 2 && i % 2 === 0) synth.play('pluck', ch[(i / 2) % 3].replace(/\d/, (o) => +o + 1), 0.2, t, 0.6);
+        }
+        next += beat * 4; bar++;
+      }
+    };
+    schedule();
+    timer = setInterval(schedule, 200);
+  };
+</script>
+</body>
+</html>
