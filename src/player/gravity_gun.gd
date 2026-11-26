@@ -159,7 +159,11 @@ func _traction(delta: float, eye: Vector3, dir: Vector3) -> void:
 	if _snag > _tuning.num("traction_snag_time") or (along > 0.3 and side < 0.9) or _player.standing_on == _cube:
 		_let_go(true)
 		return
-	_cube.linear_velocity = (rel * _tuning.num("traction_pull")).limit_length(_tuning.num("traction_max_speed"))
+	# Pull toward the hold point with a capped force, so a crate pinned on a wall
+	# presses on it instead of being driven into it at any speed.
+	var want := (rel * _tuning.num("traction_pull")).limit_length(_tuning.num("traction_max_speed"))
+	var kick := (want - _cube.linear_velocity) * _cube.mass
+	_cube.apply_central_impulse(kick.limit_length(_tuning.num("traction_max_force") * delta))
 	_cube.angular_velocity *= exp(-10.0 * delta)
 	_beam_end = cube_pos
 

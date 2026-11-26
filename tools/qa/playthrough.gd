@@ -31,6 +31,15 @@ func _run() -> void:
 
 	# ---- Room 1: over the wall by walking on the ceiling ----
 	await _snap("02_room1_start")
+	# Nose against the back wall: the gun must stay whole, not sink into it.
+	await _aim_at(Vector3(0, 1.05, -14))
+	Input.action_press(&"move_forward")
+	await _frames(60)
+	Input.action_release(&"move_forward")
+	await _frames(10)
+	await _snap("02b_gun_against_wall")
+	game.player.spawn(game.level.rooms[0]["start"], Game.START_YAW)
+	await _frames(10)
 	await _shoot_at(Vector3(0, 9, -11.5))
 	await _until_grounded("land on room 1 ceiling")
 	_check(game.player.gdir.dot(Vector3.UP) > 0.99, "gravity points at the ceiling")

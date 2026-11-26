@@ -50,6 +50,11 @@ static func create(seed: int) -> SurfaceMaterials:
 	m.gun_body.roughness = 0.35
 	m.gun_body.metallic = 0.7
 	m.gun_glow = _glow(GRAVITY_COLOR, 1.1)
+	for g: StandardMaterial3D in [m.gun_body, m.gun_glow]:
+		# Drawn shrunk toward the eye (same look on screen): the 0.9 m gun reaches past the
+		# 0.6 m body, so at full size it pokes into any wall you walk up to.
+		g.use_z_clip_scale = true
+		g.z_clip_scale = 0.25
 	return m
 
 

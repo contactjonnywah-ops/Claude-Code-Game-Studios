@@ -38,6 +38,7 @@
   "traction_range": { "value": 10.0, "why": "m the beam reaches to lock on." },
   "traction_pull": { "value": 10.0, "why": "1/s how hard a locked crate follows the beam." },
   "traction_max_speed": { "value": 12.0, "why": "m/s cap on how fast the beam drags the crate." },
+  "traction_max_force": { "value": 600.0, "why": "N the beam can put on the crate: 3 g on 20 kg, so it still snaps to the hold point but only presses on what is in the way." },
   "traction_break": { "value": 2.5, "why": "m a snagged crate may lag behind the beam." },
   "traction_snag_time": { "value": 0.5, "why": "s it may lag that far before the lock breaks." },
   "gun_range": { "value": 300.0, "why": "m the gravity shot reaches." },
