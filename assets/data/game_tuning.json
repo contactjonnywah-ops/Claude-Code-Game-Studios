@@ -1,0 +1,42 @@
+{
+  "seed": { "value": 1, "why": "Seeds every gameplay random call (footstep variation, impact pitch) so runs repeat." },
+  "volume": { "value": 0.8, "why": "Master volume, 0..1." },
+
+  "gravity": { "value": 9.81, "why": "Earth standard gravity, m/s^2. The original prototype used 18 for snappier falls; this rebuild is real-world." },
+  "air_density": { "value": 1.225, "why": "kg/m^3, sea-level air at 15 C. Drives quadratic drag F = 0.5 * rho * CdA * v^2." },
+  "player_mass": { "value": 80.0, "why": "kg, an adult in light gear (same as the prototype)." },
+  "player_drag_area": { "value": 0.55, "why": "m^2, Cd*A of a person falling at an angle. Terminal speed comes out near 48 m/s, close to a real skydiver." },
+  "lethal_speed": { "value": 17.0, "why": "m/s landing speed that kills: with drag that is a fall of about 15.5 m. The 21 m shaft in room 2 is deadly, the 9 m rooms are not." },
+  "hurt_ratio": { "value": 0.6, "why": "Share of lethal_speed above which a landing hurts (red edges, crunch)." },
+  "land_dip": { "value": 0.35, "why": "m the view dips on the hardest landing you survive." },
+  "respawn_time": { "value": 1.2, "why": "s between a deadly landing and the respawn." },
+
+  "player_radius": { "value": 0.6, "why": "m, the player's collision sphere (same as the prototype, so every doorway still fits)." },
+  "eye_height": { "value": 0.45, "why": "m above the sphere's centre, along up." },
+  "move_speed": { "value": 5.0, "why": "m/s, a brisk jog." },
+  "ground_accel": { "value": 14.0, "why": "1/s, how fast your feet close the gap to the wished speed on the ground (exponential)." },
+  "air_control": { "value": 0.9, "why": "1/s, the same in the air while a move key is held. Small: momentum carries you." },
+  "jump_height": { "value": 0.9, "why": "m, a standing jump with a little help from the boots." },
+  "step_length": { "value": 0.8, "why": "m walked per footstep." },
+  "flip_time": { "value": 0.6, "why": "s the view takes to roll to the new ground." },
+  "look_sens": { "value": 0.0022, "why": "rad per mouse pixel." },
+  "key_turn": { "value": 2.2, "why": "rad/s looking with the arrow keys." },
+
+  "cube_mass": { "value": 20.0, "why": "kg, a hollow braced crate; a quarter of the player." },
+  "cube_size": { "value": 1.0, "why": "m, edge length of the crate." },
+  "cube_drag_area": { "value": 1.05, "why": "m^2, Cd*A of a 1 m cube face-on. Terminal speed about 17 m/s." },
+  "friction": { "value": 0.5, "why": "Crate on painted steel." },
+  "bounce": { "value": 0.15, "why": "Restitution of the crate on the floor." },
+  "push_share": { "value": 0.8, "why": "Share of the speed gap the player hands to the crate per contact: m_p / (m_p + m_c) for 80 kg on 20 kg." },
+
+  "traction_lock_time": { "value": 0.8, "why": "s the beam takes to lock the crate in stasis." },
+  "traction_hold": { "value": 3.0, "why": "m in front of the eye a locked crate floats." },
+  "traction_range": { "value": 10.0, "why": "m the beam reaches to lock on." },
+  "traction_pull": { "value": 10.0, "why": "1/s how hard a locked crate follows the beam." },
+  "traction_max_speed": { "value": 12.0, "why": "m/s cap on how fast the beam drags the crate." },
+  "traction_break": { "value": 2.5, "why": "m a snagged crate may lag behind the beam." },
+  "traction_snag_time": { "value": 0.5, "why": "s it may lag that far before the lock breaks." },
+  "gun_range": { "value": 300.0, "why": "m the gravity shot reaches." },
+
+  "door_speed": { "value": 2.2, "why": "m/s the exit door slides." }
+}
