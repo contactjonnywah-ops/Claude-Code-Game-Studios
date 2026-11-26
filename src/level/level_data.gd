@@ -18,6 +18,11 @@ var door: BoxSpec
 var plate_zone: BoxSpec
 var plate_pad: BoxSpec
 var plate_mark: BoxSpec
+## Which way the plate's surface faces; only weight resting on it, pressing against
+## this, presses it.
+var plate_up := Vector3.UP
+## The box every wall fits in: anything past it has clipped out of the level.
+var bounds := AABB()
 var cube_start := Vector3.ZERO
 var win_z := 0.0
 ## Each room: { "name": String, "start": Vector3, "from_z": float }.
@@ -55,6 +60,11 @@ static func from_dict(d: Dictionary) -> LevelData:
 	L.plate_zone = BoxSpec.from_corners(d["plate_zone"])
 	L.plate_pad = BoxSpec.from_corners(d["plate_pad"])
 	L.plate_mark = BoxSpec.from_corners(d["plate_mark"])
+	if d.has("plate_up"):
+		L.plate_up = _vec(d["plate_up"]).normalized()
+	for i in L.walls.size():
+		var w := AABB(L.walls[i].center - L.walls[i].half, L.walls[i].size())
+		L.bounds = w if i == 0 else L.bounds.merge(w)
 	L.cube_start = _vec(d["cube_start"])
 	L.win_z = float(d["win_z"])
 	for r: Dictionary in d["rooms"]:
@@ -74,9 +84,16 @@ func room_at(z: float, current: int) -> int:
 	return r
 
 
-## Whether something at [param p] presses the plate.
-func presses_plate(p: Vector3) -> bool:
-	return plate_zone.contains(p)
+## Whether something at [param p] presses the plate. [param resting] says it rests on a
+## surface facing [member plate_up]: something just passing through, or floating over the
+## plate in the beam, does not press it.
+func presses_plate(p: Vector3, resting: bool = true) -> bool:
+	return resting and plate_zone.contains(p)
+
+
+## Whether [param p] is more than [param margin] metres outside the level's walls.
+func out_of_bounds(p: Vector3, margin: float) -> bool:
+	return not bounds.grow(margin).has_point(p)
 
 
 static func _vec(a: Array) -> Vector3:

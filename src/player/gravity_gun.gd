@@ -35,6 +35,8 @@ var _beam_flash := 0.0
 var _recoil := 0.0
 var _bob := 0.0
 var _query := PhysicsRayQueryParameters3D.new()
+var _fall_query := PhysicsShapeQueryParameters3D.new()
+var _fall_shape := SphereShape3D.new()
 var _muzzle: Node3D
 var _beam: MeshInstance3D
 var _marker: MeshInstance3D
@@ -189,14 +191,26 @@ func _update_aim() -> void:
 		aim = { "kind": "same" }
 		return
 	# How far the real fall would be, and how fast you would land with air drag.
-	var f := _ray(_player.global_position, nd, _tuning.num("gun_range"), PhysicsLayers.SOLID_MASK)
-	var dist := 99.0
-	if not f.is_empty():
-		dist = maxf(0.0, (f["position"] as Vector3).distance_to(_player.global_position) - _tuning.num("player_radius"))
+	var dist := fall_distance(nd)
 	var k := GravityMath.drag_constant(_tuning.num("air_density"), _tuning.num("player_drag_area"))
 	var v0 := maxf(0.0, _player.velocity.dot(nd))
 	var impact := GravityMath.impact_speed(dist, _tuning.num("gravity"), _tuning.num("player_mass"), k, v0)
 	aim = { "kind": "fall", "fall": dist, "impact": impact, "lethal": GravityMath.is_lethal(impact, _tuning.num("lethal_speed")) }
+
+
+## How far (m) the player would fall along [param down] before touching anything solid.
+## Sweeps the player's whole sphere, not a line from its centre, so a ledge the body
+## would clip counts; the player still drifts sideways with its velocity, which this ignores.
+func fall_distance(down: Vector3) -> float:
+	var reach := _tuning.num("gun_range")
+	# A hair under the real radius, so the floor the player stands on now is not a hit.
+	_fall_shape.radius = maxf(0.01, _tuning.num("player_radius") - 0.02)
+	_fall_query.shape = _fall_shape
+	_fall_query.transform = Transform3D(Basis.IDENTITY, _player.global_position)
+	_fall_query.motion = down.normalized() * reach
+	_fall_query.collision_mask = PhysicsLayers.SOLID_MASK
+	var safe := _player.get_world_3d().direct_space_state.cast_motion(_fall_query)
+	return reach * safe[0] if safe.size() > 0 else reach
 
 
 func _ray(from: Vector3, dir: Vector3, length: float, mask: int) -> Dictionary:

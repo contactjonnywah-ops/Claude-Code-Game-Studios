@@ -118,6 +118,36 @@ func _run() -> void:
 	await _frames(int(game.tuning.num("respawn_time") * Engine.physics_ticks_per_second) + 40)
 	_check(game.state == Game.State.PLAY and game.room == 1, "respawned at the room 2 start")
 
+	# ---- Flipping gravity just before a deadly landing does not save you ----
+	await _frames(30)
+	d0 = game.deaths
+	await _shoot_at(Vector3(-2, 22, 5))
+	w = 0
+	while game.player.global_position.y < 19.0 and w < 600:
+		await _frames(1)
+		w += 1
+	await _shoot_at(Vector3(-6, 20, 5)) # the shaft wall: gravity turns sideways
+	w = 0
+	while game.state != Game.State.DEAD and w < 240:
+		await _frames(1)
+		w += 1
+	_check(game.deaths == d0 + 1, "a gravity flip near the ceiling still hits it at a deadly speed")
+	await _frames(int(game.tuning.num("respawn_time") * Engine.physics_ticks_per_second) + 40)
+
+	# ---- A jump pressed just before touchdown is kept and fires on landing ----
+	await _until_grounded("stand on the room 2 floor")
+	var jumps := [0]
+	game.player.jumped.connect(func() -> void: jumps[0] += 1)
+	game.player.request_jump()
+	await _frames(10)
+	w = 0
+	while not (game.player.velocity.dot(game.player.gdir) > 0.0 and game.player.global_position.y < 0.75) and w < 240:
+		await _frames(1)
+		w += 1
+	game.player.request_jump() # still in the air: only the buffer keeps it
+	await _frames(30)
+	_check(jumps[0] == 2, "a jump pressed just before landing fires on touchdown")
+
 	print("PLAYTHROUGH: %d checks failed, %d screenshots" % [failures.size(), shots])
 	for f in failures:
 		print("  FAIL: ", f)

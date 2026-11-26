@@ -10,6 +10,8 @@
   "hurt_ratio": { "value": 0.6, "why": "Share of lethal_speed above which a landing hurts (red edges, crunch)." },
   "land_dip": { "value": 0.35, "why": "m the view dips on the hardest landing you survive." },
   "respawn_time": { "value": 1.2, "why": "s between a deadly landing and the respawn." },
+  "wall_impact_min": { "value": 6.0, "why": "m/s into a wall or ceiling before it counts as a landing (sound, hurt, death). Above a run (5) and a jump (4.2), so only falls redirected by a gravity flip reach it." },
+  "bounds_margin": { "value": 3.0, "why": "m outside the level's walls past which the player dies and the crate is put back: a net under anything that clips out." },
 
   "player_radius": { "value": 0.6, "why": "m, the player's collision sphere (same as the prototype, so every doorway still fits)." },
   "eye_height": { "value": 0.45, "why": "m above the sphere's centre, along up." },
@@ -17,6 +19,8 @@
   "ground_accel": { "value": 14.0, "why": "1/s, how fast your feet close the gap to the wished speed on the ground (exponential)." },
   "air_control": { "value": 0.9, "why": "1/s, the same in the air while a move key is held. Small: momentum carries you." },
   "jump_height": { "value": 0.9, "why": "m, a standing jump with a little help from the boots." },
+  "jump_buffer": { "value": 0.12, "why": "s a jump pressed just before landing is kept and fires on touchdown." },
+  "coyote_time": { "value": 0.1, "why": "s after walking off a ledge that a jump still pushes off it." },
   "step_length": { "value": 0.8, "why": "m walked per footstep." },
   "flip_time": { "value": 0.6, "why": "s the view takes to roll to the new ground." },
   "look_sens": { "value": 0.0022, "why": "rad per mouse pixel." },

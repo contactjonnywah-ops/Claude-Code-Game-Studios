@@ -189,7 +189,18 @@ func _physics_process(delta: float) -> void:
 		audio.play(&"chime", -6.0)
 		if room == 2:
 			cube.reset_to(level.cube_start)
-	var pressed := level.presses_plate(cube.global_position) or level.presses_plate(player.global_position)
+	# Out of the level (clipped through something): the player dies, the crate goes back.
+	var margin := tuning.num("bounds_margin")
+	if level.out_of_bounds(player.global_position, margin):
+		player.active = false
+		_on_died(player.speed())
+		return
+	if level.out_of_bounds(cube.global_position, margin):
+		gun.reset()
+		cube.reset_to(level.cube_start)
+	var player_rests := player.grounded and player.up().dot(level.plate_up) > 0.7
+	var pressed := level.presses_plate(cube.global_position, cube.rests_on(level.plate_up)) \
+		or level.presses_plate(player.global_position, player_rests)
 	if pressed != plate_down:
 		plate_down = pressed
 		mats.plate.emission = SurfaceMaterials.PLATE_ON if pressed else SurfaceMaterials.PLATE_OFF
@@ -257,6 +268,8 @@ func set_world_gravity(down: Vector3) -> void:
 
 
 func _on_died(speed: float) -> void:
+	if state == State.DEAD: # the body can hit again on its way down; one death is enough
+		return
 	deaths += 1
 	gun.reset()
 	audio.play(&"death", 2.0)

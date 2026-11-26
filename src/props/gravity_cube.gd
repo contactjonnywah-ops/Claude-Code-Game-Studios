@@ -21,6 +21,7 @@ var held := false:
 		gravity_scale = 0.0 if v else 1.0
 
 var _drag_k := 0.0
+var _contact_normals: Array[Vector3] = []
 var _prev_velocity := Vector3.ZERO
 var _reset_to: Variant = null
 var _cooldown := 0.0
@@ -56,6 +57,17 @@ func reset_to(pos: Vector3) -> void:
 	_reset_to = pos
 
 
+## Whether the crate sits on something whose surface faces [param up] (within about
+## 45 degrees) this step, and is not floating in the traction beam.
+func rests_on(up: Vector3) -> bool:
+	if held:
+		return false
+	for n in _contact_normals:
+		if n.dot(up) > 0.7:
+			return true
+	return false
+
+
 func _physics_process(_delta: float) -> void:
 	if not held:
 		apply_central_force(GravityMath.drag_acceleration(linear_velocity, _drag_k, mass) * mass)
@@ -67,10 +79,14 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 		state.linear_velocity = Vector3.ZERO
 		state.angular_velocity = Vector3.ZERO
 		_prev_velocity = Vector3.ZERO
+		_contact_normals.clear()
 		_reset_to = null
 		return
 	var v := state.linear_velocity
 	var touching := state.get_contact_count() > 0
+	_contact_normals.clear()
+	for i in state.get_contact_count():
+		_contact_normals.append(state.get_contact_local_normal(i))
 	_cooldown -= state.step
 	if touching:
 		var lost := (_prev_velocity - v).length()

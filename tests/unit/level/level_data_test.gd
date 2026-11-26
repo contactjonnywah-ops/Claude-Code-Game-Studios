@@ -40,6 +40,31 @@ func test_crate_resting_on_the_pad_presses_the_plate() -> void:
 	assert_bool(L.presses_plate(Vector3(0.5, 16.5, 15))).is_false()
 
 
+func test_crate_not_resting_does_not_press_the_plate() -> void:
+	# Floating in the beam over the pad, or tumbling through it, is not weight on it.
+	var L := LevelData.load_file()
+	assert_bool(L.presses_plate(Vector3(4, 16.5, 23), false)).is_false()
+
+
+func test_plate_faces_up_by_default() -> void:
+	assert_vector(LevelData.load_file().plate_up).is_equal(Vector3.UP)
+
+
+func test_every_room_start_is_inside_the_bounds() -> void:
+	var L := LevelData.load_file()
+	for r in L.rooms:
+		assert_bool(L.out_of_bounds(r["start"], 0.0)).is_false()
+	assert_bool(L.out_of_bounds(L.cube_start, 0.0)).is_false()
+
+
+func test_far_outside_the_walls_is_out_of_bounds() -> void:
+	var L := LevelData.load_file()
+	assert_bool(L.out_of_bounds(L.bounds.end + Vector3(0, 4, 0), 3.0)).is_true()
+	assert_bool(L.out_of_bounds(L.bounds.position - Vector3(4, 0, 0), 3.0)).is_true()
+	# Just past a wall but inside the margin is not.
+	assert_bool(L.out_of_bounds(L.bounds.end + Vector3(0, 2, 0), 3.0)).is_false()
+
+
 func test_ramp_panel_sits_on_ramp_face() -> void:
 	var L := LevelData.load_file()
 	var ramp := L.blocks[2]

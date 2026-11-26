@@ -42,7 +42,10 @@ var _flip_from := Quaternion.IDENTITY
 var _flip_t := 99.0
 var _mouse := Vector2.ZERO
 var _stride := 0.0
-var _jump_queued := false
+## Seconds a jump press stays wanted; it fires on the first step the feet can push.
+var _jump_buffer := 0.0
+## Seconds since the feet last touched ground; INF once a jump or flip spends the grace.
+var _since_ground := INF
 
 
 ## Configures the body from tuning. Call before adding to the tree.
@@ -79,7 +82,8 @@ func spawn(pos: Vector3, yaw: float) -> void:
 	hurt = 0.0
 	_stride = 0.0
 	_mouse = Vector2.ZERO
-	_jump_queued = false
+	_jump_buffer = 0.0
+	_since_ground = INF
 
 
 ## Gravity now pulls along [param down]. The view rolls; the look stays where it was.
@@ -93,6 +97,7 @@ func set_gravity(down: Vector3) -> void:
 	gdir = d
 	up_direction = -d
 	grounded = false
+	_since_ground = INF # no grace jump off ground that is no longer underfoot
 	gravity_changed.emit(d)
 
 
@@ -116,9 +121,10 @@ func speed() -> float:
 	return velocity.length()
 
 
-## Queues a jump for the next physics step.
+## Asks for a jump: it happens as soon as the feet can push, within
+## [code]jump_buffer[/code] seconds, or [code]coyote_time[/code] after leaving a ledge.
 func request_jump() -> void:
-	_jump_queued = true
+	_jump_buffer = tuning.num("jump_buffer")
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -157,10 +163,13 @@ func _physics_process(delta: float) -> void:
 	var rate := tuning.num("ground_accel") if grounded else (tuning.num("air_control") if moving else 0.0)
 	side = side.lerp(wish * tuning.num("move_speed"), GravityMath.blend(rate, delta))
 	fall += g * delta
-	if active and grounded and _jump_queued:
+	var feet_down := grounded or _since_ground <= tuning.num("coyote_time")
+	if active and feet_down and _jump_buffer > 0.0:
 		fall = -GravityMath.jump_speed(g, tuning.num("jump_height"))
 		jumped.emit()
-	_jump_queued = false
+		_jump_buffer = 0.0
+		_since_ground = INF
+	_jump_buffer -= delta
 	v = side + gdir * fall
 	v += GravityMath.drag_acceleration(v, _drag_k, tuning.num("player_mass")) * delta
 	velocity = v
@@ -172,8 +181,22 @@ func _physics_process(delta: float) -> void:
 
 	var was_grounded := grounded
 	grounded = is_on_floor()
+	_since_ground = 0.0 if grounded else _since_ground + delta
+	# Walls and ceilings hurt too: flipping gravity just before the ground does not
+	# cancel a deadly fall, it turns the old ground into a wall you hit at full speed.
+	var hit := wall_impact(v)
+	# Grounded motion keeps speed into walls that are not floor-ward of up (a ceiling
+	# after a sideways flip); a hit should stop it, not press on and hit again each step.
+	for i in get_slide_collision_count():
+		var n := get_slide_collision(i).get_normal()
+		if velocity.dot(n) < 0.0:
+			velocity -= n * velocity.dot(n)
+	if hit < tuning.num("wall_impact_min"):
+		hit = 0.0
 	if grounded and not was_grounded:
-		_land(arriving)
+		_land(maxf(arriving, hit))
+	elif hit > 0.0:
+		_land(hit)
 	if grounded and active:
 		_stride += (v - gdir * v.dot(gdir)).length() * delta
 		if _stride >= tuning.num("step_length"):
@@ -181,9 +204,24 @@ func _physics_process(delta: float) -> void:
 			footstep.emit(standing_on != null)
 
 
+## Fastest speed (m/s) this step's move drove into a surface that is not the floor,
+## given the velocity [param v] the move started with.
+func wall_impact(v: Vector3) -> float:
+	var worst := 0.0
+	for i in get_slide_collision_count():
+		var c := get_slide_collision(i)
+		if c.get_angle(0, up_direction) <= floor_max_angle:
+			continue
+		worst = maxf(worst, -v.dot(c.get_normal()))
+	return worst
+
+
 ## Pushes the crate with the player's momentum, or loads it with the player's weight.
+## Each body is pushed and loaded at most once per step, however many contacts it has.
 func _touch_bodies(v: Vector3, g: float) -> void:
 	standing_on = null
+	var pushes := {} # RigidBody3D -> [gap, into, offset], the hardest contact
+	var loads := {} # RigidBody3D -> offset
 	for i in get_slide_collision_count():
 		var c := get_slide_collision(i)
 		var body := c.get_collider() as RigidBody3D
@@ -193,12 +231,25 @@ func _touch_bodies(v: Vector3, g: float) -> void:
 		var offset := c.get_position() - body.global_position
 		if n.dot(up()) > 0.7:
 			standing_on = body
-			body.apply_force(gdir * tuning.num("player_mass") * g, offset)
+			loads[body] = offset
 			continue
 		var into := -n
 		var gap := v.dot(into) - body.linear_velocity.dot(into)
-		if gap > 0.0:
-			body.apply_impulse(into * gap * body.mass * tuning.num("push_share"), offset)
+		if gap > 0.0 and (not pushes.has(body) or gap > pushes[body][0]):
+			pushes[body] = [gap, into, offset]
+	for body: RigidBody3D in loads:
+		body.apply_force(gdir * tuning.num("player_mass") * g, loads[body])
+	for body: RigidBody3D in pushes:
+		var gap: float = pushes[body][0]
+		var into: Vector3 = pushes[body][1]
+		var share := tuning.num("push_share")
+		body.apply_impulse(into * gap * body.mass * share, pushes[body][2])
+		# The slide stopped the player dead against the crate. In a shove both move on
+		# together, so the player keeps the crate's new speed along the push.
+		var together := body.linear_velocity.dot(into) + gap * share
+		var mine := velocity.dot(into)
+		if together > mine:
+			velocity += into * (together - mine)
 
 
 func _land(speed_in: float) -> void:
