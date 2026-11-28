@@ -31,6 +31,28 @@ func test_knockdown_scales_with_the_worse_of_tilt_and_impact() -> void:
 	assert_float(GravityMath.knockdown_time(0.0, 1.0, LIMIT, HURT, 0.7, 2.5)).is_equal(2.5)
 
 
+func test_air_spin_reflex_turns_toward_the_floor_when_no_key_is_held() -> void:
+	var omega := GravityMath.air_spin(Vector3.ZERO, Vector3.UP, Vector3.RIGHT, Vector3.ZERO, 14.0, 9.0, 6.0, 0.1)
+	# Turning UP toward RIGHT is a rotation about -Z.
+	assert_float(omega.dot(Vector3.BACK)).is_less(0.0)
+	assert_float(absf(omega.x) + absf(omega.y)).is_less(0.0001)
+
+
+func test_air_spin_reflex_works_when_exactly_upside_down() -> void:
+	var omega := GravityMath.air_spin(Vector3.ZERO, Vector3.UP, Vector3.DOWN, Vector3.ZERO, 14.0, 9.0, 6.0, 0.1)
+	assert_float(omega.length()).is_greater(0.0)
+
+
+func test_air_spin_input_overrides_the_reflex() -> void:
+	var omega := GravityMath.air_spin(Vector3.ZERO, Vector3.UP, Vector3.RIGHT, Vector3.RIGHT, 14.0, 9.0, 6.0, 0.1)
+	assert_vector(omega.normalized()).is_equal_approx(Vector3.RIGHT, Vector3.ONE * 0.0001)
+
+
+func test_air_spin_drag_slows_a_spin_once_upright() -> void:
+	var omega := GravityMath.air_spin(Vector3.RIGHT * 3.0, Vector3.UP, Vector3.UP, Vector3.ZERO, 14.0, 9.0, 6.0, 0.05)
+	assert_float(omega.length()).is_less(3.0)
+
+
 func test_impact_speed_without_drag_matches_free_fall() -> void:
 	# v = sqrt(2 g h)
 	assert_float(GravityMath.impact_speed(10.0, G, MASS, 0.0)).is_equal_approx(sqrt(2.0 * G * 10.0), 0.0001)

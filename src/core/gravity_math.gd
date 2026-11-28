@@ -65,6 +65,26 @@ static func knockdown_time(misalign: float, severity: float, angle_limit: float,
 	return lerpf(t_min, t_max, clampf(maxf(tilt, hard), 0.0, 1.0))
 
 
+## One step of a falling body's spin. [param omega] is its angular velocity (rad/s, world
+## axis * rate). [param steer] is the player's roll/pitch input as a world axis (length
+## 0..1); while it is zero a reflex of strength [param assist] (1/s^2) turns
+## [param body_up] toward [param target_up]. [param damp] (1/s) is air drag on the spin.
+## Returns the new angular velocity.
+## [codeblock]
+## omega = GravityMath.air_spin(omega, body_up, -gdir, steer, 14.0, 9.0, 6.0, delta)
+## [/codeblock]
+static func air_spin(omega: Vector3, body_up: Vector3, target_up: Vector3, steer: Vector3,
+		accel: float, assist: float, damp: float, dt: float) -> Vector3:
+	var a := steer * accel
+	if steer.is_zero_approx():
+		var angle := acos(clampf(body_up.dot(target_up), -1.0, 1.0))
+		var axis := body_up.cross(target_up)
+		if axis.length() < 0.0001: # exactly upside down: any sideways axis will do
+			axis = body_up.cross(Vector3.RIGHT if absf(body_up.x) < 0.9 else Vector3.FORWARD)
+		a += axis.normalized() * angle * assist
+	return omega + (a - omega * damp) * dt
+
+
 ## Factor that closes a share of a gap at [param rate] per second over [param dt] seconds,
 ## independent of the frame rate: 1 - e^(-rate * dt).
 static func blend(rate: float, dt: float) -> float:

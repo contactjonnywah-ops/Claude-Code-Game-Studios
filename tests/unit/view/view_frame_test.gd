@@ -48,6 +48,15 @@ func test_rebase_to_same_up_changes_nothing() -> void:
 	assert_float(v.pitch).is_equal_approx(0.2, 0.00001)
 
 
+func test_rotate_body_turns_the_look_with_it() -> void:
+	var v := ViewFrame.new()
+	v.reset(0.0)
+	v.rotate_body(Quaternion(Vector3.BACK, PI / 2.0)) # rolled a quarter turn to the left
+	assert_vector(v.up()).is_equal_approx(Vector3.LEFT, Vector3.ONE * 0.0001)
+	assert_vector(v.forward()).is_equal_approx(Vector3.FORWARD, Vector3.ONE * 0.0001)
+	assert_float(v.yaw).is_equal(0.0)
+
+
 func test_add_look_clamps_pitch() -> void:
 	var v := _frame(0.0, 0.0)
 	v.add_look(0.0, 10.0)

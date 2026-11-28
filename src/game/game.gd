@@ -85,6 +85,11 @@ func _ready() -> void:
 	player.name = "Player"
 	player.setup(tuning)
 	world.add_child(player)
+	var suit := SuitBody.new()
+	suit.name = "Suit"
+	world.add_child(suit)
+	suit.setup(tuning.num("player_mass"), mats.suit, mats.suit_dark)
+	player.attach_body(suit)
 
 	camera = Camera3D.new()
 	camera.fov = BASE_FOV
@@ -181,7 +186,7 @@ func _physics_process(delta: float) -> void:
 	if state != State.PLAY:
 		return
 	run_time += delta
-	var up := player.knocked <= 0.0 # on the floor, the gun hangs idle
+	var up := not player.is_down() # on the floor, the gun hangs idle
 	gun.physics_update(delta, _fire_pressed and up, up and Input.is_action_pressed(&"fire"), _switch_pressed and up)
 	_fire_pressed = false
 	_switch_pressed = false
@@ -224,9 +229,9 @@ func _process(delta: float) -> void:
 		camera.global_position = level.title_camera_position + Vector3(sin(t * 0.2) * 1.5, 0, 0)
 		camera.look_at(level.title_camera_target)
 	else:
-		camera.global_position = player.eye_position_interpolated()
-		camera.quaternion = player.cam_q * player.body_offset() \
-			* Quaternion(Vector3.RIGHT, gun.kick() * 0.07) # the shot jolts the view up
+		camera.global_transform = player.camera_transform()
+		camera.quaternion = camera.quaternion * Quaternion(Vector3.RIGHT, gun.kick() * 0.07) # the shot jolts the view up
+		gun.visible = not player.limp
 		var fov := BASE_FOV + tuning.num("fall_fov_kick") * player.rush * player.rush
 		camera.fov = lerpf(camera.fov, fov, GravityMath.blend(6.0, delta))
 	var slide := cube.slide_speed if state == State.PLAY else 0.0
@@ -267,7 +272,7 @@ func _respawn() -> void:
 	plate_down = false
 	mats.plate.emission = SurfaceMaterials.PLATE_OFF
 	mats.plate.albedo_color = SurfaceMaterials.PLATE_OFF
-	camera.quaternion = player.cam_q
+	camera.global_transform = player.camera_transform()
 
 
 ## Points the physics space's gravity along [param down]: the crate falls that way.

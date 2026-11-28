@@ -27,6 +27,9 @@ var floor_tile: StandardMaterial3D
 var trim: StandardMaterial3D
 ## The glowing face of a light fixture.
 var lamp: StandardMaterial3D
+## The player's suit: white fabric over armour, dark grey boots.
+var suit: StandardMaterial3D
+var suit_dark: StandardMaterial3D
 
 
 ## Builds every material. [param seed] fixes the grime pattern.
@@ -68,6 +71,12 @@ static func create(seed: int) -> SurfaceMaterials:
 	m.trim.roughness = 0.4
 	m.trim.metallic = 0.6
 	m.lamp = _glow(Color("eef4ff"), 3.0)
+	m.suit = StandardMaterial3D.new()
+	m.suit.albedo_color = Color("e6eaee")
+	m.suit.roughness = 0.65
+	m.suit_dark = StandardMaterial3D.new()
+	m.suit_dark.albedo_color = Color("3a414a")
+	m.suit_dark.roughness = 0.5
 	# Every panel shares one frame layout, so one normal map recesses all their seams.
 	var seams := _seam_normals()
 	for t: StandardMaterial3D in [m.wall, m.block, m.dark, m.door, m.floor_tile]:

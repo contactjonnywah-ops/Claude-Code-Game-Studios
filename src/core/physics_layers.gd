@@ -10,6 +10,8 @@ const GRIP := 2
 const CUBE := 4
 ## The player.
 const PLAYER := 8
+## The player's limp body parts after a knockdown.
+const RAGDOLL := 16
 
 ## What the gravity shot can hit.
 const SHOT_MASK := WORLD | GRIP | CUBE

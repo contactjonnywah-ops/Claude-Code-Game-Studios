@@ -47,6 +47,11 @@ func up() -> Vector3:
 	return base * Vector3.UP
 
 
+## Turns the whole body by [param q]: the look turns with it (a tumble, not a head turn).
+func rotate_body(q: Quaternion) -> void:
+	base = (q * base).normalized()
+
+
 ## Rolls the frame so [param new_up] becomes up, keeping the look direction.
 func rebase(new_up: Vector3) -> void:
 	var to := new_up.normalized()
