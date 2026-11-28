@@ -17,6 +17,8 @@ signal jumped
 signal footstep(on_crate: bool)
 ## Gravity now points along [param down].
 signal gravity_changed(down: Vector3)
+## Landed off balance or too hard: down for [param seconds], no moving or shooting.
+signal knocked_down(seconds: float)
 
 ## Landings slower than this make no sound, m/s.
 const QUIET_LANDING := 2.5
@@ -27,7 +29,7 @@ var view := ViewFrame.new()
 ## Whether input moves the player.
 var active := false
 var grounded := false
-## The smoothed camera orientation (rolls to new ground over flip_time).
+## The body's orientation: turns to new ground at reorient_rate (the camera follows it).
 var cam_q := Quaternion.IDENTITY
 ## How far the view currently dips from a landing, m.
 var dip := 0.0
@@ -35,11 +37,23 @@ var dip := 0.0
 var hurt := 0.0
 ## The crate, when standing on it this step.
 var standing_on: Node = null
+## Seconds left on the floor after a knockdown; nothing moves or shoots while above 0.
+var knocked := 0.0
+## 0..1 how hard the air is rushing past in a fall (drives FOV, shake, streaks).
+var rush := 0.0
 
 var tuning: Tuning
 var _drag_k := 0.0
 var _flip_from := Quaternion.IDENTITY
 var _flip_t := 99.0
+var _flip_dur := 1.0
+var _flip_angle := 0.0
+var _knock_len := 1.0
+# The body rig: springs for roll, pitch (rad) and slump (m) that tip the view over.
+var _rig := Vector3.ZERO
+var _rig_v := Vector3.ZERO
+var _rig_side := 1.0
+var _shake_t := 0.0
 var _mouse := Vector2.ZERO
 var _stride := 0.0
 ## Seconds a jump press stays wanted; it fires on the first step the feet can push.
@@ -74,6 +88,11 @@ func spawn(pos: Vector3, yaw: float) -> void:
 	view.reset(yaw)
 	cam_q = view.look()
 	_flip_t = 99.0
+	_flip_angle = 0.0
+	knocked = 0.0
+	rush = 0.0
+	_rig = Vector3.ZERO
+	_rig_v = Vector3.ZERO
 	velocity = Vector3.ZERO
 	global_position = pos
 	reset_physics_interpolation()
@@ -91,9 +110,14 @@ func set_gravity(down: Vector3) -> void:
 	var d := down.normalized()
 	if d.dot(gdir) > 0.999:
 		return
+	# The body twists to the new ground at a fixed rate: a half turn takes twice a quarter.
+	_flip_angle = acos(clampf(d.dot(gdir), -1.0, 1.0))
+	_flip_dur = maxf(0.05, _flip_angle / deg_to_rad(tuning.num("reorient_rate")))
 	view.rebase(-d)
 	_flip_from = cam_q
 	_flip_t = 0.0
+	_rig_side = -_rig_side
+	_rig_v += Vector3(0.8 * _rig_side, 2.5, 0.0) # the stomach-drop jolt of the shift
 	gdir = d
 	up_direction = -d
 	grounded = false
@@ -113,7 +137,20 @@ func eye_position() -> Vector3:
 
 ## Where the eye is this rendered frame (between physics steps).
 func eye_position_interpolated() -> Vector3:
-	return get_global_transform_interpolated().origin + up() * (tuning.num("eye_height") - dip)
+	return get_global_transform_interpolated().origin + up() * (tuning.num("eye_height") - dip - _rig.z)
+
+
+## The body rig's tilt plus the shake of a fast fall, applied on top of [member cam_q].
+func body_offset() -> Quaternion:
+	var s := rush * rush * tuning.num("fall_shake")
+	var shake := Vector3(sin(_shake_t * 37.0) + sin(_shake_t * 23.0), sin(_shake_t * 29.0) + sin(_shake_t * 41.0), 0.0) * s
+	return Quaternion.from_euler(Vector3(_rig.y + shake.x, shake.y, _rig.x))
+
+
+## How far (radians) the body still is from upright on the current ground.
+func misalignment() -> float:
+	var e := clampf(_flip_t / _flip_dur, 0.0, 1.0)
+	return _flip_angle * (1.0 - e * e * (3.0 - 2.0 * e))
 
 
 ## Speed in m/s.
@@ -140,16 +177,26 @@ func _process(delta: float) -> void:
 		view.add_look(keys.x * turn - _mouse.x * sens, keys.y * turn - _mouse.y * sens)
 	_mouse = Vector2.ZERO
 	_flip_t += delta
-	var e := clampf(_flip_t / maxf(tuning.num("flip_time"), 0.001), 0.0, 1.0)
+	var e := clampf(_flip_t / _flip_dur, 0.0, 1.0)
 	cam_q = _flip_from.slerp(view.look(), e * e * (3.0 - 2.0 * e))
 	dip *= exp(-7.5 * delta)
 	hurt *= exp(-3.5 * delta)
+	_shake_t += delta
+	# Knocked down: the body tips over sideways and slumps to the floor, then gets up
+	# for the last third. Damped springs give the fall and the rise their overshoot.
+	var target := Vector3.ZERO
+	if knocked > 0.0 and knocked > _knock_len * 0.35:
+		target = Vector3(1.25 * _rig_side, -0.35, tuning.num("eye_height") + 0.35)
+	_rig_v += ((target - _rig) * 60.0 - _rig_v * 11.0) * delta
+	_rig += _rig_v * delta
 
 
 func _physics_process(delta: float) -> void:
 	var g := tuning.num("gravity")
 	var wish := Vector3.ZERO
-	if active:
+	knocked = maxf(0.0, knocked - delta)
+	var upright := knocked <= 0.0
+	if active and upright:
 		var flat := view.flat()
 		wish = flat * Vector3.FORWARD * Input.get_axis("move_back", "move_forward") \
 			+ flat * Vector3.RIGHT * Input.get_axis("move_left", "move_right")
@@ -164,7 +211,7 @@ func _physics_process(delta: float) -> void:
 	side = side.lerp(wish * tuning.num("move_speed"), GravityMath.blend(rate, delta))
 	fall += g * delta
 	var feet_down := grounded or _since_ground <= tuning.num("coyote_time")
-	if active and feet_down and _jump_buffer > 0.0:
+	if active and upright and feet_down and _jump_buffer > 0.0:
 		fall = -GravityMath.jump_speed(g, tuning.num("jump_height"))
 		jumped.emit()
 		_jump_buffer = 0.0
@@ -182,6 +229,8 @@ func _physics_process(delta: float) -> void:
 	var was_grounded := grounded
 	grounded = is_on_floor()
 	_since_ground = 0.0 if grounded else _since_ground + delta
+	var start := tuning.num("rush_start")
+	rush = 0.0 if grounded else clampf((speed() - start) / (tuning.num("lethal_speed") - start), 0.0, 1.0)
 	# Walls and ceilings hurt too: flipping gravity just before the ground does not
 	# cancel a deadly fall, it turns the old ground into a wall you hit at full speed.
 	var hit := wall_impact(v)
@@ -253,8 +302,6 @@ func _touch_bodies(v: Vector3, g: float) -> void:
 
 
 func _land(speed_in: float) -> void:
-	if speed_in < QUIET_LANDING:
-		return
 	var lethal := tuning.num("lethal_speed")
 	if GravityMath.is_lethal(speed_in, lethal):
 		active = false
@@ -262,6 +309,15 @@ func _land(speed_in: float) -> void:
 		died.emit(speed_in)
 		return
 	var r := GravityMath.landing_severity(speed_in, lethal)
+	# Even a soft touchdown floors you if the body had not turned upright yet.
+	var down := GravityMath.knockdown_time(misalignment(), r, deg_to_rad(tuning.num("knockdown_angle")),
+		tuning.num("hurt_ratio"), tuning.num("knockdown_min"), tuning.num("knockdown_max"))
+	if down > 0.0 and knocked <= 0.0:
+		knocked = down
+		_knock_len = down
+		knocked_down.emit(down)
+	if speed_in < QUIET_LANDING:
+		return
 	dip = maxf(dip, r * tuning.num("land_dip"))
 	if r > tuning.num("hurt_ratio"):
 		hurt = maxf(hurt, r)

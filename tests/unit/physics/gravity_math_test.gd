@@ -5,6 +5,32 @@ const G := 9.81
 const MASS := 80.0
 
 
+const LIMIT := PI / 6.0 # 30 degrees
+const HURT := 0.6
+
+
+func test_knockdown_upright_soft_landing_keeps_you_standing() -> void:
+	assert_float(GravityMath.knockdown_time(0.2, 0.5, LIMIT, HURT, 0.7, 2.5)).is_equal(0.0)
+
+
+func test_knockdown_landing_tilted_past_limit_knocks_you_down() -> void:
+	var t := GravityMath.knockdown_time(LIMIT + 0.1, 0.1, LIMIT, HURT, 0.7, 2.5)
+	assert_float(t).is_greater_equal(0.7)
+	assert_float(t).is_less(1.0)
+
+
+func test_knockdown_hard_upright_landing_knocks_you_down() -> void:
+	assert_float(GravityMath.knockdown_time(0.0, 0.8, LIMIT, HURT, 0.7, 2.5)).is_greater(0.7)
+
+
+func test_knockdown_scales_with_the_worse_of_tilt_and_impact() -> void:
+	var mild := GravityMath.knockdown_time(LIMIT + 0.2, 0.0, LIMIT, HURT, 0.7, 2.5)
+	var wild := GravityMath.knockdown_time(PI, 0.0, LIMIT, HURT, 0.7, 2.5)
+	assert_float(wild).is_greater(mild)
+	assert_float(wild).is_equal(2.5)
+	assert_float(GravityMath.knockdown_time(0.0, 1.0, LIMIT, HURT, 0.7, 2.5)).is_equal(2.5)
+
+
 func test_impact_speed_without_drag_matches_free_fall() -> void:
 	# v = sqrt(2 g h)
 	assert_float(GravityMath.impact_speed(10.0, G, MASS, 0.0)).is_equal_approx(sqrt(2.0 * G * 10.0), 0.0001)

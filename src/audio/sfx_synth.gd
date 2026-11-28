@@ -234,6 +234,17 @@ static func wind_loop(rng: RandomNumberGenerator) -> PackedFloat32Array:
 	return _normalize(_loopify(b, int(fade * RATE)), 0.7)
 
 
+## A falling-too-fast warning: six soft pulses a second of a bright two-tone beep; loops.
+## Exactly one second of whole cycles, so it repeats without a seam.
+static func danger_loop() -> PackedFloat32Array:
+	var b := _buf(1.0)
+	for i in b.size():
+		var t := float(i) / RATE
+		var gate := pow(maxf(0.0, sin(PI * fmod(t * 6.0, 1.0))), 3.0)
+		b[i] = (sin(TAU * 1200.0 * t) + 0.5 * sin(TAU * 1800.0 * t)) * gate
+	return _normalize(b, 0.6)
+
+
 ## The traction beam's hum; loops.
 static func beam_loop(rng: RandomNumberGenerator) -> PackedFloat32Array:
 	var n := 1.0

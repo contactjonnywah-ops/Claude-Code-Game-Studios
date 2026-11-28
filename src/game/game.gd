@@ -24,6 +24,8 @@ const TRANSITIONS := {
 
 ## Facing +z, into the rooms.
 const START_YAW := PI
+## The camera's field of view at rest, degrees (a fall widens it).
+const BASE_FOV := 80.0
 
 var state := State.TITLE
 var tuning: Tuning
@@ -85,7 +87,7 @@ func _ready() -> void:
 	world.add_child(player)
 
 	camera = Camera3D.new()
-	camera.fov = 80.0
+	camera.fov = BASE_FOV
 	camera.near = 0.05
 	camera.far = 150.0
 	camera.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
@@ -179,7 +181,8 @@ func _physics_process(delta: float) -> void:
 	if state != State.PLAY:
 		return
 	run_time += delta
-	gun.physics_update(delta, _fire_pressed, Input.is_action_pressed(&"fire"), _switch_pressed)
+	var up := player.knocked <= 0.0 # on the floor, the gun hangs idle
+	gun.physics_update(delta, _fire_pressed and up, up and Input.is_action_pressed(&"fire"), _switch_pressed and up)
 	_fire_pressed = false
 	_switch_pressed = false
 
@@ -222,9 +225,12 @@ func _process(delta: float) -> void:
 		camera.look_at(level.title_camera_target)
 	else:
 		camera.global_position = player.eye_position_interpolated()
-		camera.quaternion = player.cam_q * Quaternion(Vector3.RIGHT, gun.kick() * 0.07) # the shot jolts the view up
+		camera.quaternion = player.cam_q * player.body_offset() \
+			* Quaternion(Vector3.RIGHT, gun.kick() * 0.07) # the shot jolts the view up
+		var fov := BASE_FOV + tuning.num("fall_fov_kick") * player.rush * player.rush
+		camera.fov = lerpf(camera.fov, fov, GravityMath.blend(6.0, delta))
 	var slide := cube.slide_speed if state == State.PLAY else 0.0
-	audio.follow(player.speed() if state == State.PLAY and not player.grounded else 0.0,
+	audio.follow(player.speed() if state == State.PLAY and not player.grounded else 0.0, tuning.num("lethal_speed"),
 		gun.beam_on, gun.mode == GravityGun.Mode.TRACTION, slide, delta)
 
 
@@ -236,6 +242,8 @@ func _sync_hud() -> void:
 	hud.lock = gun.lock
 	hud.holding = gun.holding
 	hud.hurt = player.hurt
+	hud.rush = player.rush
+	hud.deadly = player.speed() > tuning.num("lethal_speed") and not player.grounded
 	hud.muted = audio.is_muted()
 
 
@@ -290,6 +298,8 @@ func _connect_sounds() -> void:
 		else:
 			audio.play(&"land", linear_to_db(0.25 + 0.75 * severity), 1.1 - 0.2 * severity))
 	player.jumped.connect(func() -> void: audio.play(&"jump", -8.0))
+	player.knocked_down.connect(func(seconds: float) -> void:
+		audio.play(&"hard_land", linear_to_db(clampf(seconds / tuning.num("knockdown_max"), 0.4, 1.0)), 0.9))
 	player.footstep.connect(func(on_crate: bool) -> void:
 		audio.play(&"crate_step" if on_crate else &"step", -10.0, 1.0))
 	gun.shot.connect(func(grip: bool, where: Vector3) -> void:

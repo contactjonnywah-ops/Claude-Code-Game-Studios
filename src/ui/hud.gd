@@ -24,7 +24,14 @@ var aim: Dictionary = {}
 var lock := 0.0
 var holding := false
 var hurt := 0.0
+## 0..1 how hard air rushes past in a fall: speed streaks at the edges.
+var rush := 0.0
+## Falling faster than a landing can survive: the streaks turn red.
+var deadly := false
 var result_text := ""
+
+## Speed streaks: each is [angle, phase, length share], fixed so the pattern streams steadily.
+var _streaks: Array[Vector3] = []
 var muted := false
 
 
@@ -32,6 +39,8 @@ func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	for i in 48: # golden-angle spread: even coverage, no visible pattern
+		_streaks.append(Vector3(i * 2.39996, fposmod(i * 0.618034, 1.0), 0.5 + 0.5 * fposmod(i * 0.371, 1.0)))
 
 
 func _process(_delta: float) -> void:
@@ -63,7 +72,22 @@ func _draw() -> void:
 		_text("You fell too far", Vector2(c.x, c.y - 60), 56, Color.WHITE)
 
 
+## Streaks stream out from the middle toward the edges, faster and longer with [member rush].
+func _draw_rush(size_now: Vector2, c: Vector2) -> void:
+	var reach := c.length()
+	var t := Time.get_ticks_msec() / 1000.0
+	var col := Color(1.0, 0.25, 0.2) if deadly else Color(0.85, 0.93, 1.0)
+	for s in _streaks:
+		var ph := fposmod(s.y + t * (0.8 + 2.2 * rush), 1.0)
+		var r0 := reach * (0.45 + 0.55 * ph)
+		var r1 := r0 + reach * 0.25 * rush * s.z
+		var d := Vector2(cos(s.x), sin(s.x))
+		draw_line(c + d * r0, c + d * r1, Color(col, rush * 0.6 * ph), 3.0, true)
+
+
 func _draw_play(size_now: Vector2, c: Vector2) -> void:
+	if rush > 0.02:
+		_draw_rush(size_now, c)
 	if hurt > 0.02: # a hard landing reddens the edges
 		var edge := Color(0.78, 0, 0, hurt * 0.55)
 		var w := size_now.x * 0.18

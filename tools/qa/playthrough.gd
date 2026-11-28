@@ -119,9 +119,14 @@ func _run() -> void:
 	var d0 := game.deaths
 	await _shoot_at(Vector3(-2, 22, 5))
 	var w := 0
+	var snapped := false
 	while game.state != Game.State.DEAD and w < 600:
 		await _frames(1)
 		w += 1
+		if not snapped and game.player.global_position.y > 17.0:
+			snapped = true
+			_check(game.player.rush > 0.5 and game.hud.deadly, "a deadly fall rushes and reads as deadly")
+			await _snap("09b_falling_rush")
 	_check(game.deaths == d0 + 1, "a 21 m fall kills")
 	await _frames(10)
 	await _snap("10_death")
@@ -157,6 +162,24 @@ func _run() -> void:
 	game.player.request_jump() # still in the air: only the buffer keeps it
 	await _frames(30)
 	_check(jumps[0] == 2, "a jump pressed just before landing fires on touchdown")
+
+	# ---- A short hop onto a new floor, before the body turns upright, knocks you down ----
+	await _walk_to(Vector3(-5.2, 0.6, 5))
+	await _shoot_at(Vector3(-6, 3, 5))
+	w = 0
+	while game.player.knocked <= 0.0 and w < 60:
+		await _frames(1)
+		w += 1
+	_check(game.player.knocked > 0.0, "landing on a wall half a metre away knocks you down")
+	await _frames(15)
+	await _snap("11_knocked_down")
+	var before := game.player.global_position
+	Input.action_press(&"move_forward")
+	await _frames(20)
+	Input.action_release(&"move_forward")
+	_check(game.player.global_position.distance_to(before) < 0.1, "you cannot walk while knocked down")
+	await _frames(int(game.tuning.num("knockdown_max") * Engine.physics_ticks_per_second) + 10)
+	_check(game.player.knocked <= 0.0 and game.player.grounded, "you get back up")
 
 	print("PLAYTHROUGH: %d checks failed, %d screenshots" % [failures.size(), shots])
 	for f in failures:
@@ -210,8 +233,8 @@ func _shoot_at(target: Vector3) -> void:
 func _until_grounded(what: String) -> void:
 	await _frames(6)
 	var t := 0
-	while not game.player.grounded and t < 600:
-		await physics_frame
+	while (not game.player.grounded or game.player.knocked > 0.0) and t < 600: # land, and get back up
+		await _frames(1)
 		t += 1
 	await _frames(30)
 	_check(game.player.grounded and game.state == Game.State.PLAY, what)

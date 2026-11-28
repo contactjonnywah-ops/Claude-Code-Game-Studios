@@ -36,7 +36,7 @@ func test_footstep_length_is_short() -> void:
 func test_loops_join_without_a_jump() -> void:
 	var r := _rng()
 	for b: PackedFloat32Array in [SfxSynth.wind_loop(r), SfxSynth.beam_loop(r), SfxSynth.scrape_loop(r), SfxSynth.room_tone(r),
-			SfxSynth.ambient_pad(r)]:
+			SfxSynth.ambient_pad(r), SfxSynth.danger_loop()]:
 		# The step across the loop point is no bigger than typical steps inside it.
 		var typical := 0.0
 		for i in range(1, b.size()):

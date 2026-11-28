@@ -24,6 +24,7 @@ var _next_flat := 0
 var _next_spatial := 0
 var _wind: AudioStreamPlayer
 var _hum: AudioStreamPlayer
+var _danger: AudioStreamPlayer
 var _room: AudioStreamPlayer
 var _pad: AudioStreamPlayer
 var _scrape: AudioStreamPlayer3D
@@ -57,6 +58,7 @@ func setup(tuning: Tuning, cube: Node3D) -> void:
 		_spatial.append(p)
 	_wind = _loop(&"wind", SFX_BUS)
 	_hum = _loop(&"beam", SFX_BUS)
+	_danger = _loop(&"danger", &"Master") # dry: a warning, not a sound in the room
 	_room = _loop(&"room", AMBIENCE_BUS)
 	_room.volume_db = -14.0
 	_pad = _loop(&"pad", AMBIENCE_BUS)
@@ -121,12 +123,15 @@ func play_at(name: StringName, where: Vector3, volume_db: float = 0.0, pitch: fl
 	p.play()
 
 
-## Follows the physics each frame: wind with the player's speed, hum with the beam,
-## scrape with the crate sliding.
-func follow(player_speed: float, beam_on: bool, traction: bool, cube_slide: float, delta: float) -> void:
+## Follows the physics each frame: wind with the player's fall speed, a warning that
+## pulses faster as it nears [param lethal_speed], hum with the beam, scrape with the crate.
+func follow(player_speed: float, lethal_speed: float, beam_on: bool, traction: bool, cube_slide: float, delta: float) -> void:
 	var w := clampf((player_speed - 2.0) / 28.0, 0.0, 1.0)
 	_set_loop(_wind, w * w * 1.2, delta)
 	_wind.pitch_scale = 0.75 + w * 0.6
+	var d := clampf((player_speed - 0.7 * lethal_speed) / (0.3 * lethal_speed), 0.0, 1.0)
+	_set_loop(_danger, d * 0.35, delta)
+	_danger.pitch_scale = 0.8 + 0.7 * d # faster pulses, higher pitch as death nears
 	_set_loop(_hum, 0.35 if beam_on and traction else 0.0, delta)
 	var s := clampf((cube_slide - 0.3) / 4.0, 0.0, 1.0)
 	_scrape.volume_db = linear_to_db(maxf(s * 0.8, 0.0001))
@@ -232,6 +237,7 @@ func _build_bank() -> void:
 	_bank[&"win"] = many.call(func(_i: int) -> PackedFloat32Array: return SfxSynth.win(), 1)
 	_bank[&"wind"] = [SfxSynth.to_stream(SfxSynth.wind_loop(r), true)]
 	_bank[&"beam"] = [SfxSynth.to_stream(SfxSynth.beam_loop(r), true)]
+	_bank[&"danger"] = [SfxSynth.to_stream(SfxSynth.danger_loop(), true)]
 	_bank[&"scrape"] = [SfxSynth.to_stream(SfxSynth.scrape_loop(r), true)]
 	_bank[&"room"] = [SfxSynth.to_stream(SfxSynth.room_tone(r), true)]
 	_bank[&"pad"] = [SfxSynth.to_stream(SfxSynth.ambient_pad(r), true)]

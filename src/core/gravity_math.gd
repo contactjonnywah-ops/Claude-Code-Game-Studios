@@ -52,6 +52,19 @@ static func is_lethal(speed: float, lethal_speed: float) -> bool:
 	return speed > lethal_speed
 
 
+## Seconds a landing knocks the player down: 0 when they land upright enough and soft
+## enough. [param misalign] is how far (radians) the body still was from upright,
+## [param severity] the landing's 0..1 share of lethal. Past either limit, the time runs
+## from [param t_min] to [param t_max] with how bad the worse of the two was.
+static func knockdown_time(misalign: float, severity: float, angle_limit: float, hurt_ratio: float,
+		t_min: float, t_max: float) -> float:
+	if misalign <= angle_limit and severity <= hurt_ratio:
+		return 0.0
+	var tilt := (misalign - angle_limit) / (PI / 2.0)
+	var hard := (severity - hurt_ratio) / maxf(1.0 - hurt_ratio, 0.001)
+	return lerpf(t_min, t_max, clampf(maxf(tilt, hard), 0.0, 1.0))
+
+
 ## Factor that closes a share of a gap at [param rate] per second over [param dt] seconds,
 ## independent of the frame rate: 1 - e^(-rate * dt).
 static func blend(rate: float, dt: float) -> float:
