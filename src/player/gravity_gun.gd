@@ -44,6 +44,11 @@ var _stasis: MeshInstance3D
 var _beam_mat: StandardMaterial3D
 
 const REST := Vector3(0.26, -0.22, -0.5)
+## Seconds a gravity shot's beam stays, thinning out.
+const SHOT_FLASH := 0.3
+
+var _marker_base := Transform3D.IDENTITY
+var _marker_pop := 0.0
 
 
 ## Wires the gun to the player and crate, and builds its viewmodel and effects under [param world].
@@ -114,19 +119,20 @@ func _shoot(eye: Vector3, dir: Vector3) -> void:
 	_recoil = 1.0
 	if hit.is_empty():
 		_beam_end = eye + dir * _tuning.num("gun_range")
-		_beam_flash = 0.12
+		_beam_flash = SHOT_FLASH
 		shot.emit(false, _beam_end)
 		return
 	var p: Vector3 = hit["position"]
 	var n: Vector3 = hit["normal"]
 	_beam_end = p
-	_beam_flash = 0.12
+	_beam_flash = SHOT_FLASH
 	var grip: bool = (hit["collider"] as Node).is_in_group(LevelBuilder.GRIP_GROUP)
 	shot.emit(grip, p)
 	if not grip:
 		return
 	_marker.visible = true
-	_marker.global_transform = Transform3D(_basis_along(n, 1.0).scaled_local(Vector3(1, 0.25, 1)), p + n * 0.03)
+	_marker_base = Transform3D(_basis_along(n, 1.0).scaled_local(Vector3(1, 0.25, 1)), p + n * 0.03)
+	_marker_pop = 1.0
 	_player.set_gravity(-n)
 
 
@@ -230,30 +236,43 @@ func _process(delta: float) -> void:
 	if _player.grounded:
 		walk = (_player.velocity - _player.gdir * _player.velocity.dot(_player.gdir)).length()
 	_bob += delta * walk * 1.9
-	_recoil = move_toward(_recoil, 0.0, delta * 6.0)
+	_recoil = move_toward(_recoil, 0.0, delta * 3.0)
 	var amp := minf(walk / 5.0, 1.0) * 0.012
-	position = REST + Vector3(cos(_bob) * amp, -absf(sin(_bob)) * amp, _recoil * 0.06)
-	rotation.x = _recoil * 0.12
+	var k := _recoil * _recoil # sharp kick, slow settle
+	position = REST + Vector3(cos(_bob) * amp, -absf(sin(_bob)) * amp + k * 0.03, k * 0.16)
+	rotation.x = k * 0.45
+	_marker_pop = move_toward(_marker_pop, 0.0, delta * 4.0)
+	if _marker.visible:
+		_marker.global_transform = _marker_base.scaled_local(Vector3.ONE * (1.0 + 1.2 * _marker_pop * _marker_pop))
 	# Effects, drawn where the interpolated bodies are this frame.
 	var tip := _muzzle.global_position
 	var end := _cube.get_global_transform_interpolated().origin if holding else _beam_end
 	_beam.visible = beam_on and tip.distance_to(end) > 0.05
 	if _beam.visible:
 		var d := end - tip
-		_beam.global_transform = Transform3D(_basis_along(d.normalized(), d.length()), tip + d * 0.5)
+		# A gravity shot is a thick blast that thins away; the traction beam stays thin.
+		var width := 1.0
+		if mode == Mode.GRAVITY:
+			width = 1.0 + 4.0 * clampf(_beam_flash / SHOT_FLASH, 0.0, 1.0)
+		_beam.global_transform = Transform3D(_basis_along(d.normalized(), d.length(), width), tip + d * 0.5)
 	_stasis.visible = lock > 0.0
 	if _stasis.visible:
 		_stasis.global_position = _cube.get_global_transform_interpolated().origin
 		_stasis.scale = Vector3.ONE * maxf(0.01, lock) * (1.0 + 0.03 * sin(Time.get_ticks_msec() * 0.012))
 
 
-## A basis whose Y axis runs along [param axis] with length [param length].
-static func _basis_along(axis: Vector3, length: float) -> Basis:
+## How hard the last shot is still kicking, 0..1 (the camera follows it).
+func kick() -> float:
+	return _recoil * _recoil
+
+
+## A basis whose Y axis runs along [param axis] with length [param length], [param width] across.
+static func _basis_along(axis: Vector3, length: float, width: float = 1.0) -> Basis:
 	var y := axis.normalized()
 	var helper := Vector3.UP if absf(y.dot(Vector3.UP)) < 0.9 else Vector3.RIGHT
 	var x := helper.cross(y).normalized()
 	var z := x.cross(y).normalized()
-	return Basis(x, y * length, z)
+	return Basis(x * width, y * length, z * width)
 
 
 func _apply_mode_color() -> void:

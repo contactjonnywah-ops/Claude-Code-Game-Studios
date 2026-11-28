@@ -25,9 +25,14 @@ var _next_spatial := 0
 var _wind: AudioStreamPlayer
 var _hum: AudioStreamPlayer
 var _room: AudioStreamPlayer
+var _pad: AudioStreamPlayer
 var _scrape: AudioStreamPlayer3D
 var _cube: Node3D
 var _muted := false
+var _verb: AudioEffectReverb
+var _distant: AudioStreamPlayer
+var _gap := Vector2(5.0, 14.0)
+var _next_distant := INF
 
 
 ## Synthesises the sounds and builds the players. [param cube] carries the scrape loop.
@@ -54,6 +59,12 @@ func setup(tuning: Tuning, cube: Node3D) -> void:
 	_hum = _loop(&"beam", SFX_BUS)
 	_room = _loop(&"room", AMBIENCE_BUS)
 	_room.volume_db = -14.0
+	_pad = _loop(&"pad", AMBIENCE_BUS)
+	_pad.volume_db = -20.0
+	_distant = AudioStreamPlayer.new()
+	_distant.bus = AMBIENCE_BUS
+	add_child(_distant)
+	_gap = Vector2(tuning.num("distant_gap_min"), tuning.num("distant_gap_max"))
 	_scrape = AudioStreamPlayer3D.new()
 	_scrape.stream = _bank[&"scrape"][0]
 	_scrape.bus = SFX_BUS
@@ -67,6 +78,26 @@ func setup(tuning: Tuning, cube: Node3D) -> void:
 func start_ambience() -> void:
 	if not _room.playing:
 		_room.play()
+		_pad.play()
+		_next_distant = _rng.randf_range(_gap.x, _gap.y)
+
+
+## Makes the sound effects ring like the room the player is in: [param space] maps
+## [AudioEffectReverb] property names (room_size, wet, predelay_msec, damping) to values.
+func set_space(space: Dictionary) -> void:
+	for key: String in space:
+		_verb.set(key, float(space[key]))
+
+
+func _process(delta: float) -> void:
+	# The rest of the facility: now and then something far off clanks, vents or whirs.
+	_next_distant -= delta
+	if _next_distant <= 0.0:
+		_next_distant = _rng.randf_range(_gap.x, _gap.y)
+		_distant.stream = _pick(&"distant")
+		_distant.volume_db = _rng.randf_range(-22.0, -14.0)
+		_distant.pitch_scale = _rng.randf_range(0.85, 1.1)
+		_distant.play()
 
 
 ## Plays [param name] without position.
@@ -147,7 +178,7 @@ func _build_buses(volume: float) -> void:
 		var i := AudioServer.bus_count - 1
 		AudioServer.set_bus_name(i, SFX_BUS)
 		AudioServer.set_bus_send(i, &"Master")
-		var verb := AudioEffectReverb.new() # big steel-and-concrete rooms
+		var verb := AudioEffectReverb.new() # steel-and-concrete rooms; set_space tunes it per room
 		verb.room_size = 0.72
 		verb.damping = 0.35
 		verb.spread = 0.8
@@ -158,11 +189,19 @@ func _build_buses(volume: float) -> void:
 		AudioServer.add_bus_effect(i, verb)
 		var limiter := AudioEffectHardLimiter.new()
 		AudioServer.add_bus_effect(0, limiter)
+	_verb = AudioServer.get_bus_effect(AudioServer.get_bus_index(SFX_BUS), 0)
 	if AudioServer.get_bus_index(AMBIENCE_BUS) == -1:
 		AudioServer.add_bus()
 		var j := AudioServer.bus_count - 1
 		AudioServer.set_bus_name(j, AMBIENCE_BUS)
 		AudioServer.set_bus_send(j, &"Master")
+		var hall := AudioEffectReverb.new() # far-off sounds arrive mostly as echo
+		hall.room_size = 0.95
+		hall.damping = 0.5
+		hall.predelay_msec = 80.0
+		hall.wet = 0.6
+		hall.dry = 0.5
+		AudioServer.add_bus_effect(j, hall)
 
 
 func _build_bank() -> void:
@@ -172,13 +211,14 @@ func _build_bank() -> void:
 		for i in n:
 			out.append(SfxSynth.to_stream(make.call(i), false))
 		return out
-	_bank[&"step"] = many.call(func(_i: int) -> PackedFloat32Array: return SfxSynth.footstep(r), 5)
+	_bank[&"step"] = many.call(func(_i: int) -> PackedFloat32Array: return SfxSynth.footstep(r), 8)
 	_bank[&"crate_step"] = many.call(func(_i: int) -> PackedFloat32Array: return SfxSynth.crate_step(r), 3)
 	_bank[&"land"] = many.call(func(_i: int) -> PackedFloat32Array: return SfxSynth.land(r), 2)
 	_bank[&"hard_land"] = many.call(func(_i: int) -> PackedFloat32Array: return SfxSynth.hard_land(r), 2)
 	_bank[&"death"] = many.call(func(_i: int) -> PackedFloat32Array: return SfxSynth.death(r), 1)
 	_bank[&"crate"] = many.call(func(i: int) -> PackedFloat32Array: return SfxSynth.crate_impact(r, i), 3)
 	_bank[&"shot"] = many.call(func(_i: int) -> PackedFloat32Array: return SfxSynth.gravity_shot(r), 2)
+	_bank[&"impact"] = many.call(func(_i: int) -> PackedFloat32Array: return SfxSynth.gravity_impact(r), 2)
 	_bank[&"dud"] = many.call(func(_i: int) -> PackedFloat32Array: return SfxSynth.dud(r), 1)
 	_bank[&"shift"] = many.call(func(_i: int) -> PackedFloat32Array: return SfxSynth.gravity_shift(r), 1)
 	_bank[&"switch"] = many.call(func(_i: int) -> PackedFloat32Array: return SfxSynth.mode_switch(r), 1)
@@ -194,3 +234,5 @@ func _build_bank() -> void:
 	_bank[&"beam"] = [SfxSynth.to_stream(SfxSynth.beam_loop(r), true)]
 	_bank[&"scrape"] = [SfxSynth.to_stream(SfxSynth.scrape_loop(r), true)]
 	_bank[&"room"] = [SfxSynth.to_stream(SfxSynth.room_tone(r), true)]
+	_bank[&"pad"] = [SfxSynth.to_stream(SfxSynth.ambient_pad(r), true)]
+	_bank[&"distant"] = many.call(func(i: int) -> PackedFloat32Array: return SfxSynth.distant_machinery(r, i), 6)

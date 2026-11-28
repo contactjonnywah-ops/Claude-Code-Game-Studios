@@ -46,7 +46,7 @@
 
 ## Data schemas
 - `assets/data/game_tuning.json`: `{ "<key>": { "value": number, "why": "rationale and units" } }`. Every key is read by `Tuning.num()`.
-- `assets/data/level_rooms.json`: boxes are `[x0, x1, y0, y1, z0, z1]` metres with an optional 7th value (turn about z, radians). `panels` entries are `{ "box": [...], "center"?: [x, y, z] }`. `rooms` entries are `{ "name", "start": [x, y, z], "from_z" }` (you enter a room once `z > from_z`). Also `end_glow`, `door`, `plate_zone`, `plate_pad`, `plate_mark`, `cube_start`, `win_z`, `lights`, `title_camera`.
+- `assets/data/level_rooms.json`: boxes are `[x0, x1, y0, y1, z0, z1]` metres with an optional 7th value (turn about z, radians). Optional `trims` is a list of boxes of solid trim (door frames, pillars), and optional `plate_up` ([x, y, z], default up) is the way the plate faces; floors are recognised as thin slabs whose top is a room's floor. `panels` entries are `{ "box": [...], "center"?: [x, y, z] }`. `rooms` entries are `{ "name", "start": [x, y, z], "from_z" }` (you enter a room once `z > from_z`). Also `end_glow`, `door`, `plate_zone`, `plate_pad`, `plate_mark`, `cube_start`, `win_z`, `lights`, `title_camera`.
 
 ---
 **Kill condition:** If the shaft can't be climbed without dying at 9.81 m/s², raise `lethal_speed`, not gravity.

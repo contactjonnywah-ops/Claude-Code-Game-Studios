@@ -18,8 +18,9 @@ func _peak(b: PackedFloat32Array) -> float:
 func test_one_shots_are_non_silent_and_within_range() -> void:
 	var r := _rng()
 	for b: PackedFloat32Array in [SfxSynth.footstep(r), SfxSynth.land(r), SfxSynth.death(r),
-			SfxSynth.crate_impact(r, 1), SfxSynth.gravity_shot(r), SfxSynth.gravity_shift(r),
-			SfxSynth.door_motor(r, 1.2), SfxSynth.chime(), SfxSynth.win()]:
+			SfxSynth.crate_impact(r, 1), SfxSynth.gravity_shot(r), SfxSynth.gravity_impact(r), SfxSynth.gravity_shift(r),
+			SfxSynth.door_motor(r, 1.2), SfxSynth.chime(), SfxSynth.win(),
+			SfxSynth.distant_machinery(r, 0), SfxSynth.distant_machinery(r, 1), SfxSynth.distant_machinery(r, 2)]:
 		assert_int(b.size()).is_greater(0)
 		assert_float(_peak(b)).is_between(0.3, 1.0)
 
@@ -34,7 +35,8 @@ func test_footstep_length_is_short() -> void:
 
 func test_loops_join_without_a_jump() -> void:
 	var r := _rng()
-	for b: PackedFloat32Array in [SfxSynth.wind_loop(r), SfxSynth.beam_loop(r), SfxSynth.scrape_loop(r), SfxSynth.room_tone(r)]:
+	for b: PackedFloat32Array in [SfxSynth.wind_loop(r), SfxSynth.beam_loop(r), SfxSynth.scrape_loop(r), SfxSynth.room_tone(r),
+			SfxSynth.ambient_pad(r)]:
 		# The step across the loop point is no bigger than typical steps inside it.
 		var typical := 0.0
 		for i in range(1, b.size()):

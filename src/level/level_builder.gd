@@ -30,9 +30,11 @@ static func build(level: LevelData, mats: SurfaceMaterials, parent: Node3D) -> L
 	solid.physics_material_override = _steel()
 	b.root.add_child(solid)
 	for box in level.walls:
-		_add_box(solid, box, mats.wall, true)
+		_add_box(solid, box, mats.floor_tile if level.is_floor(box) else mats.wall, true)
 	for box in level.blocks:
 		_add_box(solid, box, mats.block, true)
+	for box in level.trims:
+		_add_box(solid, box, mats.trim, true)
 	for box in level.tube:
 		_add_box(solid, box, mats.glass, true).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_add_box(solid, level.end_glow, mats.exit_glow, true)
@@ -55,14 +57,71 @@ static func build(level: LevelData, mats: SurfaceMaterials, parent: Node3D) -> L
 		l.position = p
 		l.omni_range = 16.0
 		l.omni_attenuation = 1.2
-		l.light_energy = 2.2
-		l.light_color = Color("fff6ea")
+		l.light_energy = 2.8
+		l.light_color = Color("f2f7ff") # cool clinical white
 		l.shadow_enabled = i % 2 == 0
 		l.shadow_bias = 0.05
 		b.root.add_child(l)
 		b.lamps.append(l)
+		l.position = _add_fixture(b.root, p, level, mats) # shine from the fixture
 		i += 1
 	return b
+
+
+## Mounts a glowing light fixture on the surface nearest [param light], looking straight
+## along the six axes; never on a grip panel, where it would get in the way of a shot.
+## Returns where the light should sit: just in front of the fixture (or where it was).
+static func _add_fixture(parent: Node3D, light: Vector3, level: LevelData, mats: SurfaceMaterials) -> Vector3:
+	var best := INF
+	var dir := Vector3.ZERO
+	for d: Vector3 in [Vector3.UP, Vector3.DOWN, Vector3.LEFT, Vector3.RIGHT, Vector3.FORWARD, Vector3.BACK]:
+		var dist := _distance_to_solid(light, d, level)
+		if dist < best and not _on_panel(light + d * dist, level):
+			best = dist
+			dir = d
+	if dir == Vector3.ZERO:
+		return light
+	var axis := dir.abs().max_axis_index()
+	var size := Vector3(1.6, 1.6, 1.6)
+	size[axis] = 0.04
+	size[(axis + 2) % 3] = 0.45 # a strip: long along z on ceilings, upright on side walls
+	var hit := light + dir * best
+	for part: Array in [[mats.trim, size + Vector3.ONE * 0.12 - dir.abs() * 0.1, 0.03], [mats.lamp, size, 0.065]]:
+		var mesh := BoxMesh.new()
+		mesh.size = part[1]
+		var mi := MeshInstance3D.new()
+		mi.mesh = mesh
+		mi.material_override = part[0]
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mi.position = hit - dir * float(part[2])
+		parent.add_child(mi)
+	return hit - dir * 0.6
+
+
+## How far from [param p] along axis direction [param d] the first wall or block face is.
+static func _distance_to_solid(p: Vector3, d: Vector3, level: LevelData) -> float:
+	var axis := d.abs().max_axis_index()
+	var best := INF
+	for box: BoxSpec in level.walls + level.blocks:
+		var lo := box.center - box.half
+		var hi := box.center + box.half
+		var across := true
+		for a in 3:
+			if a != axis and (p[a] < lo[a] or p[a] > hi[a]):
+				across = false
+		if not across:
+			continue
+		var dist := ((lo[axis] if d[axis] > 0.0 else hi[axis]) - p[axis]) * d[axis]
+		if dist > 0.0:
+			best = minf(best, dist)
+	return best
+
+
+static func _on_panel(p: Vector3, level: LevelData) -> bool:
+	for panel in level.panels:
+		if AABB(panel.center - panel.half, panel.size()).grow(0.9).has_point(p):
+			return true
+	return false
 
 
 ## Crate-on-steel contact; the crate's own material sets the pair.

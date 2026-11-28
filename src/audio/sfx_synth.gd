@@ -20,13 +20,17 @@ const RATE := 32000
 
 # ---- Sounds -------------------------------------------------------------------------
 
-## A boot on a steel-panelled floor.
+## A boot on a steel-panelled floor: heel, then toe, and the panel answering.
 static func footstep(rng: RandomNumberGenerator) -> PackedFloat32Array:
 	var b := _buf(0.22)
-	_mix(b, _shape(_sweep(0.12, 120.0 * rng.randf_range(0.9, 1.1), 55.0), 0.002, 0.03), 0.6, 0.0)
-	_mix(b, _shape(_bandpass(_noise(rng, 0.05), 2200.0 * rng.randf_range(0.8, 1.2), 1.2), 0.0008, 0.012), 0.6, 0.0)
-	_mix(b, _shape(_lowpass(_noise(rng, 0.12), 1500.0), 0.003, 0.04), 0.45, 0.008)
-	_mix(b, _shape(_highpass(_noise(rng, 0.08), 3000.0), 0.01, 0.03), 0.1, 0.05)
+	var k := rng.randf_range(0.9, 1.1)
+	_mix(b, _shape(_sweep(0.1, 130.0 * k, 60.0), 0.002, 0.025), 0.55, 0.0)
+	_mix(b, _shape(_bandpass(_noise(rng, 0.04), 2600.0 * k, 1.4), 0.0005, 0.008), 0.5, 0.0)
+	var toe := rng.randf_range(0.04, 0.06)
+	_mix(b, _shape(_bandpass(_noise(rng, 0.04), 1900.0 * k, 1.2), 0.001, 0.01), 0.3, toe)
+	_mix(b, _shape(_sweep(0.06, 110.0 * k, 70.0), 0.002, 0.015), 0.25, toe)
+	_mix(b, _modal(0.2, [310.0 * k, 520.0 * k, 870.0 * k, 1240.0 * k], [0.05, 0.035, 0.025, 0.015], [1.0, 0.6, 0.4, 0.25], rng), 0.18, 0.002)
+	_mix(b, _shape(_highpass(_bandpass(_noise(rng, 0.1), 5000.0, 0.8), 2500.0), 0.01, 0.03), 0.08, 0.01)
 	return _normalize(b, 0.8)
 
 
@@ -37,13 +41,18 @@ static func crate_step(rng: RandomNumberGenerator) -> PackedFloat32Array:
 	return _normalize(b, 0.8)
 
 
-## A landing on the feet: knees take it, gear rattles.
+## A landing on the feet: two boots strike, the floor panel booms, knees and gear take it.
 static func land(rng: RandomNumberGenerator) -> PackedFloat32Array:
-	var b := _buf(0.6)
-	_mix(b, _shape(_sweep(0.4, 95.0, 38.0), 0.002, 0.09), 1.0, 0.0)
-	_mix(b, _shape(_lowpass(_lowpass(_noise(rng, 0.4), 700.0), 700.0), 0.002, 0.1), 1.2, 0.0)
-	_mix(b, _shape(_bandpass(_noise(rng, 0.2), 3200.0, 0.7), 0.004, 0.05), 0.18, 0.01)
-	_mix(b, _modal(0.3, [820.0, 1310.0, 1975.0, 2630.0], [0.05, 0.04, 0.03, 0.02], [1.0, 0.7, 0.5, 0.3], rng), 0.12, 0.012)
+	var b := _buf(0.7)
+	for foot in 2:
+		var at := foot * rng.randf_range(0.012, 0.025)
+		_mix(b, _shape(_sweep(0.3, 100.0, 40.0), 0.002, 0.07), 0.8, at)
+		_mix(b, _shape(_bandpass(_noise(rng, 0.05), 2200.0, 1.0), 0.0005, 0.01), 0.5, at)
+	_mix(b, _modal(0.6, [92.0, 141.0, 233.0, 377.0, 610.0], [0.25, 0.18, 0.12, 0.08, 0.05], [1.0, 0.7, 0.5, 0.35, 0.2], rng), 0.5, 0.0)
+	_mix(b, _shape(_lowpass(_lowpass(_noise(rng, 0.3), 500.0), 500.0), 0.01, 0.08), 1.0, 0.03)
+	_mix(b, _shape(_bandpass(_noise(rng, 0.25), 1200.0, 0.6), 0.02, 0.06), 0.15, 0.04)
+	_mix(b, _modal(0.3, [820.0, 1310.0, 1975.0, 2630.0], [0.05, 0.04, 0.03, 0.02], [1.0, 0.7, 0.5, 0.3], rng), 0.1, 0.02)
+	_drive(b, 1.3)
 	return _normalize(b, 0.9)
 
 
@@ -80,14 +89,29 @@ static func crate_impact(rng: RandomNumberGenerator, variant: int) -> PackedFloa
 	return _normalize(b, 0.9)
 
 
-## The gravity shot: a charged zap, a pressure whump and crackle.
+## The gravity shot: a short charge, then a driven sub-bass slam, a crack and a rumbling tail.
 static func gravity_shot(rng: RandomNumberGenerator) -> PackedFloat32Array:
-	var b := _buf(0.9)
-	_mix(b, _shape(_sweep(0.5, 1400.0, 110.0, 2), 0.001, 0.11), 0.5, 0.0)
-	_mix(b, _shape(_sweep(0.8, 170.0, 42.0), 0.006, 0.19), 0.9, 0.0)
-	_mix(b, _shape(_bandpass(_noise(rng, 0.3), 900.0, 0.8), 0.002, 0.07), 0.6, 0.0)
-	_mix(b, _shape(_highpass(_noise(rng, 0.1), 4500.0), 0.0005, 0.025), 0.3, 0.0)
-	return _normalize(b, 0.85)
+	var b := _buf(1.8)
+	var charge := _sweep(0.07, 180.0, 900.0, 3)
+	_envelope(charge, 0.06, 0.0, 0.01)
+	_mix(b, charge, 0.25, 0.0)
+	const HIT := 0.07
+	_mix(b, _shape(_sweep(0.9, 110.0, 28.0, 2), 0.002, 0.3), 1.4, HIT)
+	_mix(b, _shape(_bandpass(_noise(rng, 0.12), 1800.0, 0.7), 0.0005, 0.03), 0.9, HIT)
+	_mix(b, _shape(_lowpass(_lowpass(_noise(rng, 1.6), 220.0), 220.0), 0.01, 0.5), 3.0, HIT)
+	_mix(b, _shape(_sweep(0.5, 700.0, 160.0), 0.003, 0.12), 0.25, HIT + 0.01)
+	_drive(b, 2.2)
+	return _normalize(b, 0.95)
+
+
+## A gravity shot landing on a panel: a heavy, distant whump with a metallic ring.
+static func gravity_impact(rng: RandomNumberGenerator) -> PackedFloat32Array:
+	var b := _buf(1.4)
+	_mix(b, _shape(_sweep(0.8, 75.0, 30.0), 0.004, 0.28), 1.2, 0.0)
+	_mix(b, _shape(_lowpass(_noise(rng, 0.8), 400.0), 0.003, 0.2), 1.0, 0.0)
+	_mix(b, _modal(1.2, [210.0, 347.0, 512.0, 760.0], [0.5, 0.35, 0.25, 0.15], [1.0, 0.6, 0.4, 0.25], rng), 0.2, 0.0)
+	_drive(b, 1.6)
+	return _normalize(b, 0.9)
 
 
 ## A shot at a surface the gun cannot grip: a dull click and a buzz.
@@ -152,7 +176,7 @@ static func plate(rng: RandomNumberGenerator, on: bool) -> PackedFloat32Array:
 	return _normalize(b, 0.75)
 
 
-## The exit door's motor running its travel, ending in a clunk.
+## The exit door: a pneumatic hiss, the motor running its travel, a clunk and a vent.
 static func door_motor(rng: RandomNumberGenerator, seconds: float) -> PackedFloat32Array:
 	var b := _buf(seconds + 0.45)
 	var motor := _buf(seconds + 0.15)
@@ -173,6 +197,8 @@ static func door_motor(rng: RandomNumberGenerator, seconds: float) -> PackedFloa
 	_mix(b, rattle, 0.08, 0.0)
 	_mix(b, _shape(_sweep(0.3, 120.0, 48.0), 0.001, 0.07), 1.0, seconds)
 	_mix(b, _shape(_bandpass(_noise(rng, 0.03), 2000.0, 1.5), 0.0003, 0.008), 0.5, seconds)
+	_mix(b, _shape(_highpass(_noise(rng, 0.5), 2500.0), 0.01, 0.12), 0.35, 0.0)
+	_mix(b, _shape(_highpass(_noise(rng, 0.4), 3000.0), 0.005, 0.09), 0.3, seconds)
 	return _normalize(b, 0.8)
 
 
@@ -235,6 +261,48 @@ static func scrape_loop(rng: RandomNumberGenerator) -> PackedFloat32Array:
 	return _normalize(_loopify(b, int(fade * RATE)), 0.6)
 
 
+## Something far off in the facility, heard through walls: a clank (variant 0), an air
+## vent breathing (1) or a servo whirring to a stop (2). Low-passed: distance eats the highs.
+static func distant_machinery(rng: RandomNumberGenerator, variant: int) -> PackedFloat32Array:
+	var b := _buf(3.0)
+	match variant % 3:
+		0:
+			var f := rng.randf_range(100.0, 140.0)
+			_mix(b, _shape(_lowpass(_noise(rng, 0.05), 900.0), 0.001, 0.02), 0.8, 0.0)
+			_mix(b, _modal(2.5, [f, f * 1.56, f * 2.21, f * 3.42], [0.9, 0.6, 0.4, 0.25], [1.0, 0.7, 0.5, 0.3], rng), 0.6, 0.0)
+		1:
+			var vent := _bandpass(_noise(rng, 2.8), rng.randf_range(450.0, 700.0), 0.5)
+			_envelope(vent, 0.7, 0.8, 1.2)
+			_mix(b, vent, 1.0, 0.0)
+		2:
+			var whir := _sweep(1.3, rng.randf_range(80.0, 100.0), rng.randf_range(130.0, 160.0), 4)
+			_envelope(whir, 0.15, 0.95, 0.2)
+			_mix(b, whir, 0.6, 0.0)
+			_mix(b, _shape(_sweep(0.3, 90.0, 45.0), 0.002, 0.08), 0.8, 1.3)
+	_lowpass(_lowpass(b, 1500.0), 1500.0)
+	return _normalize(b, 0.8)
+
+
+## A slow, cold synth pad under everything (a spread minor-ninth chord that breathes); loops.
+static func ambient_pad(rng: RandomNumberGenerator) -> PackedFloat32Array:
+	var n := 8.0
+	var fade := 1.0
+	var b := _buf(n + fade)
+	var notes := [73.42, 110.0, 174.61, 261.63, 329.63] # D2 A2 F3 C4 E4
+	for v in notes.size():
+		var f: float = notes[v]
+		var ph := rng.randf() * TAU
+		var swell := rng.randf() * TAU
+		var level := 1.0 / (1.0 + v * 0.35)
+		for i in b.size():
+			var t := float(i) / RATE
+			var amp := (0.6 + 0.4 * sin(TAU * t * (v % 2 + 1) / n + swell)) * level
+			# Two slightly detuned voices beat slowly, the octave adds a little air.
+			b[i] += (sin(TAU * f * t + ph) + 0.6 * sin(TAU * f * 1.004 * t) + 0.15 * sin(TAU * f * 2.0 * t)) * amp
+	_lowpass(b, 1400.0)
+	return _normalize(_loopify(b, int(fade * RATE)), 0.5)
+
+
 ## The rooms' air handling and mains hum; loops.
 static func room_tone(rng: RandomNumberGenerator) -> PackedFloat32Array:
 	var n := 4.0
@@ -244,7 +312,9 @@ static func room_tone(rng: RandomNumberGenerator) -> PackedFloat32Array:
 	var b := _buf(n + fade)
 	for i in b.size():
 		var t := float(i) / RATE
-		b[i] = sin(TAU * 60.0 * t) * 0.05 + sin(TAU * 120.0 * t) * 0.03 + sin(TAU * 180.0 * t) * 0.01 + brown[i] * 1.6 + air[i] * 0.35
+		# Light-fitting buzz: mains harmonics up to 240 Hz, a little brighter than plain hum.
+		b[i] = sin(TAU * 60.0 * t) * 0.05 + sin(TAU * 120.0 * t) * 0.05 + sin(TAU * 180.0 * t) * 0.02 \
+			+ sin(TAU * 240.0 * t) * 0.012 + brown[i] * 1.6 + air[i] * 0.35
 	return _normalize(_loopify(b, int(fade * RATE)), 0.5)
 
 
@@ -434,6 +504,14 @@ static func _mix(dst: PackedFloat32Array, src: PackedFloat32Array, gain: float, 
 	var n := mini(src.size(), dst.size() - o)
 	for i in n:
 		dst[o + i] += src[i] * gain
+
+
+## In place: soft-clips through tanh after [param gain]: thicker, louder-feeling lows.
+static func _drive(b: PackedFloat32Array, gain: float) -> PackedFloat32Array:
+	_normalize(b, 1.0)
+	for i in b.size():
+		b[i] = tanh(b[i] * gain)
+	return b
 
 
 ## In place: scales so the loudest sample is [param peak].

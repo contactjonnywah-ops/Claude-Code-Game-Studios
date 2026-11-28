@@ -65,6 +65,23 @@ func test_far_outside_the_walls_is_out_of_bounds() -> void:
 	assert_bool(L.out_of_bounds(L.bounds.end + Vector3(0, 2, 0), 3.0)).is_false()
 
 
+func test_shipped_level_has_three_floor_slabs() -> void:
+	var L := LevelData.load_file()
+	var floors := L.walls.filter(func(w: BoxSpec) -> bool: return L.is_floor(w))
+	assert_int(floors.size()).is_equal(3)
+
+
+func test_trims_never_cover_a_grip_panel_or_a_start() -> void:
+	var L := LevelData.load_file()
+	assert_int(L.trims.size()).is_greater(0)
+	for t in L.trims:
+		var box := AABB(t.center - t.half, t.size())
+		for p in L.panels:
+			assert_bool(box.intersects(AABB(p.center - p.half, p.size()))).is_false()
+		for r in L.rooms:
+			assert_bool(box.grow(0.6).has_point(r["start"])).is_false()
+
+
 func test_ramp_panel_sits_on_ramp_face() -> void:
 	var L := LevelData.load_file()
 	var ramp := L.blocks[2]

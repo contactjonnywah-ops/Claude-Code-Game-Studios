@@ -1,6 +1,8 @@
 {
   "seed": { "value": 1, "why": "Seeds every gameplay random call (footstep variation, impact pitch) so runs repeat." },
   "volume": { "value": 0.8, "why": "Master volume, 0..1." },
+  "distant_gap_min": { "value": 5.0, "why": "s, shortest wait between far-off facility sounds (clanks, vents, servos)." },
+  "distant_gap_max": { "value": 14.0, "why": "s, longest wait: rare enough to stay background, often enough that the place feels alive." },
 
   "gravity": { "value": 9.81, "why": "Earth standard gravity, m/s^2. The original prototype used 18 for snappier falls; this rebuild is real-world." },
   "air_density": { "value": 1.225, "why": "kg/m^3, sea-level air at 15 C. Drives quadratic drag F = 0.5 * rho * CdA * v^2." },

@@ -186,6 +186,7 @@ func _physics_process(delta: float) -> void:
 	var now := level.room_at(player.global_position.z, room)
 	while room < now: # a new room is a checkpoint; room 3 puts the crate back where it starts
 		room += 1
+		audio.set_space(level.rooms[room]["space"])
 		audio.play(&"chime", -6.0)
 		if room == 2:
 			cube.reset_to(level.cube_start)
@@ -221,7 +222,7 @@ func _process(delta: float) -> void:
 		camera.look_at(level.title_camera_target)
 	else:
 		camera.global_position = player.eye_position_interpolated()
-		camera.quaternion = player.cam_q
+		camera.quaternion = player.cam_q * Quaternion(Vector3.RIGHT, gun.kick() * 0.07) # the shot jolts the view up
 	var slide := cube.slide_speed if state == State.PLAY else 0.0
 	audio.follow(player.speed() if state == State.PLAY and not player.grounded else 0.0,
 		gun.beam_on, gun.mode == GravityGun.Mode.TRACTION, slide, delta)
@@ -250,6 +251,7 @@ func _new_run() -> void:
 ## Back to the start of the room you are in, the floor as the ground.
 func _respawn() -> void:
 	set_world_gravity(Vector3.DOWN)
+	audio.set_space(level.rooms[room]["space"])
 	player.spawn(level.rooms[room]["start"], START_YAW)
 	gun.reset()
 	cube.reset_to(level.cube_start)
@@ -291,7 +293,9 @@ func _connect_sounds() -> void:
 	player.footstep.connect(func(on_crate: bool) -> void:
 		audio.play(&"crate_step" if on_crate else &"step", -10.0, 1.0))
 	gun.shot.connect(func(grip: bool, where: Vector3) -> void:
-		audio.play(&"shot" if grip else &"dud", -2.0 if grip else -6.0))
+		audio.play(&"shot" if grip else &"dud", 0.0 if grip else -6.0)
+		if grip:
+			audio.play_at(&"impact", where, 2.0))
 	gun.mode_changed.connect(func(_m: GravityGun.Mode) -> void: audio.play(&"switch", -6.0))
 	gun.locked.connect(func() -> void: audio.play(&"lock", -4.0))
 	gun.released.connect(func() -> void: audio.play(&"release", -6.0))
@@ -309,9 +313,13 @@ func _build_environment(world: Node3D) -> void:
 	env.background_color = Color("0b0f14")
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color("dfe8f5")
-	env.ambient_light_energy = 0.35
+	env.ambient_light_energy = 0.15
 	env.tonemap_mode = Environment.TONE_MAPPER_AGX
 	env.tonemap_exposure = 1.0
+	# Light bouncing off white panels fills the chambers: the clean, bright test-lab look.
+	env.sdfgi_enabled = true
+	env.sdfgi_use_occlusion = true
+	env.sdfgi_energy = 0.35
 	env.ssao_enabled = true
 	env.ssao_radius = 1.2
 	env.ssao_intensity = 1.6
@@ -330,6 +338,7 @@ func _set_low_spec(on: bool) -> void:
 	get_viewport().scaling_3d_scale = 0.5 if on else 1.0
 	env.ssao_enabled = not on
 	env.glow_enabled = not on
-	env.ambient_light_energy = 0.9 if on else 0.35
+	env.sdfgi_enabled = not on
+	env.ambient_light_energy = 0.9 if on else 0.15
 	for i in built.lamps.size():
 		built.lamps[i].shadow_enabled = (not on) and i % 2 == 0

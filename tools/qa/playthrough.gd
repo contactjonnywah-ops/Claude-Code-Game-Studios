@@ -57,6 +57,7 @@ func _run() -> void:
 	_check(game.gun.aim.get("lethal", false), "the 21 m shaft ceiling reads as a deadly fall")
 	await _snap("04_room2_deadly_aim")
 	await _shoot_at(Vector3(-6, 3, 5))
+	await _snap("04b_gravity_shot")
 	await _until_grounded("land on the shaft wall")
 	await _walk_to(Vector3(-5.4, 19.5, 5))
 	await _shoot_at(Vector3(-2, 22, 5))
@@ -167,6 +168,8 @@ func _run() -> void:
 
 func _frames(n: int) -> void:
 	for i in n:
+		if game.state == Game.State.PAUSE: # the window lost focus (someone using the machine): play on
+			game._enter(Game.State.PLAY)
 		await physics_frame
 
 

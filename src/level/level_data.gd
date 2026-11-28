@@ -13,6 +13,8 @@ var walls: Array[BoxSpec] = []
 var blocks: Array[BoxSpec] = []
 var tube: Array[BoxSpec] = []
 var panels: Array[BoxSpec] = []
+## Solid architectural detail (door frames, pillars): trim metal, never grippable.
+var trims: Array[BoxSpec] = []
 var end_glow: BoxSpec
 var door: BoxSpec
 var plate_zone: BoxSpec
@@ -25,7 +27,8 @@ var plate_up := Vector3.UP
 var bounds := AABB()
 var cube_start := Vector3.ZERO
 var win_z := 0.0
-## Each room: { "name": String, "start": Vector3, "from_z": float }.
+## Each room: { "name": String, "start": Vector3, "from_z": float, "space": Dictionary }.
+## "space" sets the room's reverb: AudioEffectReverb property names to values.
 var rooms: Array[Dictionary] = []
 var lights: Array[Vector3] = []
 var title_camera_position := Vector3.ZERO
@@ -50,6 +53,8 @@ static func from_dict(d: Dictionary) -> LevelData:
 		L.blocks.append(BoxSpec.from_corners(c))
 	for c: Array in d["tube"]:
 		L.tube.append(BoxSpec.from_corners(c))
+	for c: Array in d.get("trims", []):
+		L.trims.append(BoxSpec.from_corners(c))
 	for p: Dictionary in d["panels"]:
 		var b := BoxSpec.from_corners(p["box"])
 		if p.has("center"):
@@ -68,7 +73,8 @@ static func from_dict(d: Dictionary) -> LevelData:
 	L.cube_start = _vec(d["cube_start"])
 	L.win_z = float(d["win_z"])
 	for r: Dictionary in d["rooms"]:
-		L.rooms.append({ "name": str(r["name"]), "start": _vec(r["start"]), "from_z": float(r["from_z"]) })
+		L.rooms.append({ "name": str(r["name"]), "start": _vec(r["start"]), "from_z": float(r["from_z"]),
+			"space": r.get("space", {}) })
 	for l: Array in d["lights"]:
 		L.lights.append(_vec(l))
 	L.title_camera_position = _vec(d["title_camera"]["position"])
@@ -89,6 +95,16 @@ func room_at(z: float, current: int) -> int:
 ## plate in the beam, does not press it.
 func presses_plate(p: Vector3, resting: bool = true) -> bool:
 	return resting and plate_zone.contains(p)
+
+
+## Whether [param box] is a floor slab: a thin horizontal box whose top is a room's floor
+## (a room's start sits one body radius, under a metre, above its floor).
+func is_floor(box: BoxSpec) -> bool:
+	var top := box.center.y + box.half.y
+	for r in rooms:
+		if box.half.y <= 0.5 and absf(top - floorf((r["start"] as Vector3).y)) < 0.01:
+			return true
+	return false
 
 
 ## Whether [param p] is more than [param margin] metres outside the level's walls.
